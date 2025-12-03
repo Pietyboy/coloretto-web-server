@@ -2,6 +2,7 @@ import cors from 'cors';
 import { config as loadEnv } from 'dotenv';
 import express from 'express';
 import { query } from './db.js';
+import authMiddleware from './middlewares/authMiddleware.js';
 import errorHandler from './middlewares/errorHandler.js';
 import authRouter from './modules/auth/index.js';
 import gameRouter from './modules/game/index.js';
@@ -20,8 +21,7 @@ app.get('/api/ping', (_req, res) => {
 });
 
 app.use('/api/auth', authRouter);
-app.use('/api/game', gameRouter);
-app.use('/api/games', gameRouter);
+app.use('/api/game', authMiddleware, gameRouter);
 
 app.get('/api/test-db', async (_req, res, next) => {
   try {

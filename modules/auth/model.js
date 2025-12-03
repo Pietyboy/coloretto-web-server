@@ -14,3 +14,18 @@ export const authenticate = async (username, password) => {
 
   return JSON.parse(payload);
 };
+
+export const login = async (username, password) => {
+  const { rows } = await query('SELECT "game_create_user"($1, $2)', [
+    username,
+    password,
+  ]);
+
+  const payload = rows[0]?.game_create_user;
+
+  if (!payload) {
+    return null;
+  }
+
+  return JSON.parse(payload);
+};
