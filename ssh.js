@@ -1,5 +1,5 @@
-import fs from "fs";
 import { config as loadEnv } from "dotenv";
+import fs from "fs";
 import { createTunnel } from "tunnel-ssh";
 
 loadEnv();
@@ -27,7 +27,6 @@ async function createSSHTunnel() {
     readyTimeout: 30000
   };
 
-  // Fallback to key auth only if no password provided
   if (!sshPassword && process.env.SSH_PRIVATE_KEY_PATH) {
     sshOptions.privateKey = fs.readFileSync(process.env.SSH_PRIVATE_KEY_PATH);
   }
@@ -38,7 +37,6 @@ async function createSSHTunnel() {
         type: "keyboard-interactive",
         username: sshOptions.username,
         prompt: (_name, _instructions, _lang, prompts, finish) => {
-          // Respond to all prompts with the password (server advertises only keyboard-interactive)
           finish(prompts.map(() => sshPassword));
         }
       },
