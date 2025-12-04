@@ -64,7 +64,7 @@ export const joinGame = async (gameId, nickName) => {
 
 export const makeTurnRow = async (playerId, gameId, rowId) => {
   if (!playerId) {
-    const err = new Error('Player of seats is required');
+    const err = new Error('Player ID is required');
     err.status = 400;
     throw err;
   }
@@ -86,7 +86,7 @@ export const makeTurnRow = async (playerId, gameId, rowId) => {
 
 export const makeTurnCard = async (playerId, gameId, rowId) => {
   if (!playerId) {
-    const err = new Error('Player of seats is required');
+    const err = new Error('Player ID is required');
     err.status = 400;
     throw err;
   }
