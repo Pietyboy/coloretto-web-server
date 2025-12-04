@@ -44,3 +44,8 @@ export const fetchNewPlayer = async (gameId, nickname) => {
   const { rows } = await query('SELECT "game_create_player"($1, $2)', [gameId, nickname]);
   return rows[0]?.game_create_player;
 };
+
+export const fetchFinishGame = async (gameId) => {
+  const { rows } = await query('SELECT "game_finish_game"($1)', [gameId]);
+  return rows[0]?.game_finish_game;
+};

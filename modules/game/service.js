@@ -137,3 +137,13 @@ export const createNewPlayer = async (gameId, nickname) => {
 
   return gameModel.fetchNewPlayer(gameId, nickname);
 };
+
+export const finishGame = async (gameId) => {
+  if (!gameId) {
+    const err = new Error('Game ID is required');
+    err.status = 400;
+    throw err;
+  }
+
+  return gameModel.fetchFinishGame(gameId);
+};

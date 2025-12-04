@@ -78,3 +78,13 @@ export const createNewPlayer = async (req, res, next) => {
     next(err);
   }
 };
+
+export const finishGame = async (req, res, next) => {
+  try {
+    const { gameId } = req.body;
+    const result = await gameService.finishGame(gameId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};

@@ -11,5 +11,6 @@ router.post('/turn/row', controller.makeTurnRow);
 router.post('/turn/card', controller.makeTurnRow);
 router.post('/colors', controller.chooseColors);
 router.post('/create/player', controller.createNewPlayer);
+router.post('/finish/game', controller.finishGame);
 
 export default router;
