@@ -12,7 +12,7 @@ export const fetchGameState = async (gameId) => {
 
 export const fetchNewGame = async (maxSeatsCount, turnTime, gameName, playerId) => {
   const { rows } = await query('SELECT "game_create_game"($1, $2, $3, $4)', [maxSeatsCount, turnTime, gameName, playerId]);
-  return rows[0]?.get_create_game;
+  return rows[0]?.game_create_game;
 };
 
 export const fetchGameScores = async (gameId) => {
