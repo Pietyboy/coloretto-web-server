@@ -176,14 +176,14 @@ export const createNewPlayer = async (gameId, nickname) => {
   return gameModel.fetchNewPlayer(gameId, nickname);
 };
 
-export const finishGame = async (gameId) => {
+export const finishGame = async (gameId, userId) => {
   if (!gameId) {
     const err = new Error('Требуется ID игры');
     err.status = 400;
     throw err;
   }
 
-  return gameModel.fetchFinishGame(gameId);
+  return gameModel.fetchFinishGame(gameId, userId);
 };
 
 export const getCardInfo = async (gameId, cardId) => {

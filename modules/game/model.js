@@ -10,8 +10,8 @@ export const fetchGameState = async (gameId) => {
   return rows[0]?.get_game_state;
 };
 
-export const fetchNewGame = async (maxSeatsCount, turnTime, gameName) => {
-  const { rows } = await query('SELECT "game_create_game"($1, $2, $3)', [maxSeatsCount, turnTime, gameName]);
+export const fetchNewGame = async (maxSeatsCount, turnTime, gameName, playerId) => {
+  const { rows } = await query('SELECT "game_create_game"($1, $2, $3, $4)', [maxSeatsCount, turnTime, gameName, playerId]);
   return rows[0]?.get_create_game;
 };
 
@@ -65,8 +65,8 @@ export const fetchNewPlayer = async (gameId, nickname) => {
   return rows[0]?.game_create_player;
 };
 
-export const fetchFinishGame = async (gameId) => {
-  const { rows } = await query('SELECT "game_finish_game"($1)', [gameId]);
+export const fetchFinishGame = async (gameId, userId) => {
+  const { rows } = await query('SELECT "game_finish_game"($1, $2)', [gameId, userId]);
   return rows[0]?.game_finish_game;
 };
 

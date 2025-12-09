@@ -7,7 +7,6 @@ router.get('/list', controller.getGamesList);
 router.get('/state/:id', controller.getGameState);
 router.post('/create/game', controller.createNewGame)
 router.get('/score/:id', controller.getGameScores);
-router.get('/scores/:id', controller.getGameScores);
 router.get('/hosted/:user_id', controller.getHostedGames);
 router.post('/start', controller.startGame);
 router.post('/delete', controller.deleteGame);

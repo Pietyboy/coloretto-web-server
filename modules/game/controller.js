@@ -1,6 +1,6 @@
-import * as gameService from './service.js';
-import { getConnections, touchPresence } from '../../presence.js';
 import { clearOldAutoMarks, maybeAutoMove } from '../../auto-play.js';
+import { getConnections, touchPresence } from '../../presence.js';
+import * as gameService from './service.js';
 
 export const getGamesList = async (_req, res, next) => {
   try {
@@ -48,8 +48,8 @@ export const getGameState = async (req, res, next) => {
 
 export const createNewGame = async (req, res, next) => {
   try {
-    const { maxSeatsCount, turnTime, gameName } = req.body;
-    const result = await gameService.createNewGame(maxSeatsCount, turnTime, gameName);
+    const { maxSeatsCount, turnTime, gameName, playerId } = req.body;
+    const result = await gameService.createNewGame(maxSeatsCount, turnTime, gameName, playerId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -162,7 +162,8 @@ export const createNewPlayer = async (req, res, next) => {
 export const finishGame = async (req, res, next) => {
   try {
     const { gameId } = req.body;
-    const result = await gameService.finishGame(gameId);
+    const userId = req.userId;
+    const result = await gameService.finishGame(gameId, userId);
     res.json(result);
   } catch (err) {
     next(err);
