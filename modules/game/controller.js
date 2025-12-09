@@ -112,7 +112,8 @@ export const joinGame = async (req, res, next) => {
 export const leaveGame = async (req, res, next) => {
   try {
     const { gameId, playerId } = req.body;
-    const result = await gameService.leaveGame(gameId, playerId);
+    const userId = req.userId;
+    const result = await gameService.leaveGame(gameId, playerId, userId);
     res.json(result);
   } catch (err) {
     next(err);
