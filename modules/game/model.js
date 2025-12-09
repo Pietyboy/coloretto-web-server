@@ -41,7 +41,7 @@ export const fetchJoinGame = async (gameId, userId, nickName) => {
 };
 
 export const fetchLeaveGame = async (gameId, playerId, userId) => {
-  const { rows } = await query('SELECT "game_leave_game"($1, $2)', [gameId, playerId, userId]);
+  const { rows } = await query('SELECT "game_leave_game"($1, $2, $3)', [gameId, playerId, userId]);
   return rows[0]?.game_leave_game;
 };
 
