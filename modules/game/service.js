@@ -6,7 +6,7 @@ export const getGamesList = async () => {
 
 export const getGameState = async (gameId) => {
   if (!gameId) {
-    const err = new Error('Game ID is required');
+    const err = new Error('Требуется ID игры');
     err.status = 400;
     throw err;
   }
@@ -16,19 +16,19 @@ export const getGameState = async (gameId) => {
 
 export const createNewGame = async (maxSeatsCount, turnTime, gameName) => {
   if (!maxSeatsCount) {
-    const err = new Error('Number of seats is required');
+    const err = new Error('Требуется количество мест');
     err.status = 400;
     throw err;
   }
 
   if (!turnTime) {
-    const err = new Error('Turn time is required');
+    const err = new Error('Требуется время на ход');
     err.status = 400;
     throw err;
   }
 
   if (!gameName) {
-    const err = new Error('Game name is required');
+    const err = new Error('Требуется название игры');
     err.status = 400;
     throw err;
   }
@@ -38,7 +38,7 @@ export const createNewGame = async (maxSeatsCount, turnTime, gameName) => {
 
 export const getGameScores = async (gameId) => {
   if (!gameId) {
-    const err = new Error('Game ID is required');
+    const err = new Error('Требуется ID игры');
     err.status = 400;
     throw err;
   }
@@ -46,37 +46,75 @@ export const getGameScores = async (gameId) => {
   return gameModel.fetchGameScores(gameId);
 };
 
-export const joinGame = async (gameId, nickName) => {
+export const getHostedGames = async (userId) => {
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
+    err.status = 400;
+    throw err;
+  }
+
+  return gameModel.fetchHostedGames(userId);
+};
+
+export const startGame = async (gameId, userId) => {
   if (!gameId) {
-    const err = new Error('Turn time is required');
+    const err = new Error('Требуется ID игры');
+    err.status = 400;
+    throw err;
+  }
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
+    err.status = 400;
+    throw err;
+  }
+  return gameModel.fetchStartGame(gameId, userId);
+};
+
+export const deleteGame = async (gameId, userId) => {
+  if (!gameId) {
+    const err = new Error('Требуется ID игры');
+    err.status = 400;
+    throw err;
+  }
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
+    err.status = 400;
+    throw err;
+  }
+  return gameModel.fetchDeleteGame(gameId, userId);
+};
+
+export const joinGame = async (gameId, userId, nickName) => {
+  if (!gameId) {
+    const err = new Error('Требуется ID игры');
     err.status = 400;
     throw err;
   }
 
-  if (!nickName) {
-    const err = new Error('Game name is required');
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
     err.status = 400;
     throw err;
   }
 
-  return gameModel.fetchNewGame(maxSeatsCount, turnTime, gameName);
+  return gameModel.fetchJoinGame(gameId, userId, nickName);
 };
 
 export const makeTurnRow = async (playerId, gameId, rowId) => {
   if (!playerId) {
-    const err = new Error('Player ID is required');
+    const err = new Error('Требуется ID игрока');
     err.status = 400;
     throw err;
   }
 
   if (!rowId) {
-    const err = new Error('Row ID is required');
+    const err = new Error('Требуется ID ряда');
     err.status = 400;
     throw err;
   }
 
   if (!gameId) {
-    const err = new Error('Game ID is required');
+    const err = new Error('Требуется ID игры');
     err.status = 400;
     throw err;
   }
@@ -86,19 +124,19 @@ export const makeTurnRow = async (playerId, gameId, rowId) => {
 
 export const makeTurnCard = async (playerId, gameId, rowId) => {
   if (!playerId) {
-    const err = new Error('Player ID is required');
+    const err = new Error('Требуется ID игрока');
     err.status = 400;
     throw err;
   }
 
   if (!rowId) {
-    const err = new Error('Row ID is required');
+    const err = new Error('Требуется ID ряда');
     err.status = 400;
     throw err;
   }
 
   if (!gameId) {
-    const err = new Error('Game ID is required');
+    const err = new Error('Требуется ID игры');
     err.status = 400;
     throw err;
   }
@@ -108,13 +146,13 @@ export const makeTurnCard = async (playerId, gameId, rowId) => {
 
 export const chooseColors = async (playerId, colorIds) => {
   if (!playerId) {
-    const err = new Error('Player ID is required');
+    const err = new Error('Требуется ID игрока');
     err.status = 400;
     throw err;
   }
 
   if (!colorIds) {
-    const err = new Error('Color Ids is required');
+    const err = new Error('Требуются ID цветов');
     err.status = 400;
     throw err;
   }
@@ -124,13 +162,13 @@ export const chooseColors = async (playerId, colorIds) => {
 
 export const createNewPlayer = async (gameId, nickname) => {
   if (!gameId) {
-    const err = new Error('Game ID seats is required');
+    const err = new Error('Требуется ID игры');
     err.status = 400;
     throw err;
   }
 
   if (!nickname) {
-    const err = new Error('Nickname is required');
+    const err = new Error('Требуется никнейм');
     err.status = 400;
     throw err;
   }
@@ -140,10 +178,41 @@ export const createNewPlayer = async (gameId, nickname) => {
 
 export const finishGame = async (gameId) => {
   if (!gameId) {
-    const err = new Error('Game ID is required');
+    const err = new Error('Требуется ID игры');
     err.status = 400;
     throw err;
   }
 
   return gameModel.fetchFinishGame(gameId);
+};
+
+export const getCardInfo = async (gameId, cardId) => {
+  if (!gameId) {
+    const err = new Error('Требуется ID игры');
+    err.status = 400;
+    throw err;
+  }
+
+  if (!cardId) {
+    const err = new Error('Требуется ID карты');
+    err.status = 400;
+    throw err;
+  }
+
+  return gameModel.fetchCardInfo(gameId, cardId);
+};
+
+export const leaveGame = async (gameId, playerId) => {
+  if (!gameId) {
+    const err = new Error('Требуется ID игры');
+    err.status = 400;
+    throw err;
+  }
+  if (!playerId) {
+    const err = new Error('Требуется ID игрока');
+    err.status = 400;
+    throw err;
+  }
+
+  return gameModel.fetchLeaveGame(gameId, playerId);
 };

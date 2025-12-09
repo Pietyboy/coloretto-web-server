@@ -20,9 +20,29 @@ export const fetchGameScores = async (gameId) => {
   return rows[0]?.get_game_scores;
 };
 
-export const fetchJoinGame = async (gameId, nickName) => {
-  const { rows } = await query('SELECT "game_join_game"($1, $2)', [gameId, nickName]);
+export const fetchHostedGames = async (userId) => {
+  const { rows } = await query('SELECT "game_get_hosted_games"($1)', [userId]);
+  return rows[0]?.game_get_hosted_games;
+};
+
+export const fetchStartGame = async (gameId, userId) => {
+  const { rows } = await query('SELECT "game_start_game"($1, $2)', [gameId, userId]);
+  return rows[0]?.game_start_game;
+};
+
+export const fetchDeleteGame = async (gameId, userId) => {
+  const { rows } = await query('SELECT "game_delete_game"($1, $2)', [gameId, userId]);
+  return rows[0]?.game_delete_game;
+};
+
+export const fetchJoinGame = async (gameId, userId, nickName) => {
+  const { rows } = await query('SELECT "game_join_game"($1, $2, $3)', [gameId, userId, nickName]);
   return rows[0]?.game_join_game;
+};
+
+export const fetchLeaveGame = async (gameId, playerId) => {
+  const { rows } = await query('SELECT "game_leave_game"($1, $2)', [gameId, playerId]);
+  return rows[0]?.game_leave_game;
 };
 
 export const fetchMakeTurnRow = async (playerId, gameId, rowId) => {
@@ -36,8 +56,8 @@ export const fetchMakeTurnCard = async (playerId, gameId, rowId) => {
 };
 
 export const fetchChooseColors = async (playerId, colorIds) => {
-  const { rows } = await query('SELECT "game_make_turn_card"($1, $2)', [playerId, colorIds]);
-  return rows[0]?.game_make_turn_card;
+  const { rows } = await query('SELECT "game_choose_colors"($1, $2)', [playerId, colorIds]);
+  return rows[0]?.game_choose_colors;
 };
 
 export const fetchNewPlayer = async (gameId, nickname) => {
@@ -48,4 +68,9 @@ export const fetchNewPlayer = async (gameId, nickname) => {
 export const fetchFinishGame = async (gameId) => {
   const { rows } = await query('SELECT "game_finish_game"($1)', [gameId]);
   return rows[0]?.game_finish_game;
+};
+
+export const fetchCardInfo = async (gameId, cardId) => {
+  const { rows } = await query('SELECT "game_get_card_info"($1, $2)', [gameId, cardId]);
+  return rows[0]?.game_get_card_info;
 };

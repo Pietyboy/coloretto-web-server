@@ -1,4 +1,6 @@
 import * as gameService from './service.js';
+import { getConnections, touchPresence } from '../../presence.js';
+import { clearOldAutoMarks, maybeAutoMove } from '../../auto-play.js';
 
 export const getGamesList = async (_req, res, next) => {
   try {
@@ -12,8 +14,33 @@ export const getGamesList = async (_req, res, next) => {
 export const getGameState = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const state = await gameService.getGameState(id);
-    res.json({ state });
+    const playerId = req.userId || (req.query?.playerId ? Number(req.query.playerId) : undefined);
+    if (playerId) {
+      touchPresence(id, playerId);
+    }
+    clearOldAutoMarks();
+    let state = await gameService.getGameState(id);
+    let connections = getConnections(id);
+
+    const autoPlayed = await maybeAutoMove(id, state, connections);
+    if (autoPlayed) {
+      state = await gameService.getGameState(id);
+      connections = getConnections(id);
+    }
+
+    const playersWithPresence = Array.isArray(state?.players)
+      ? state.players.map(p => ({
+          ...p,
+          isConnected: connections.get(p.playerId) ?? false,
+        }))
+      : state?.players;
+
+    res.json({
+      state: {
+        ...state,
+        players: playersWithPresence,
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -43,6 +70,59 @@ export const makeTurnRow = async (req, res, next) => {
   try {
     const { playerId, gameId, rowId } = req.body;
     const result = await gameService.makeTurnRow(playerId, gameId, rowId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const startGame = async (req, res, next) => {
+  try {
+    const { gameId } = req.body;
+    const userId = req.userId;
+    const result = await gameService.startGame(gameId, userId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteGame = async (req, res, next) => {
+  try {
+    const { gameId } = req.body;
+    const userId = req.userId;
+    const result = await gameService.deleteGame(gameId, userId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const joinGame = async (req, res, next) => {
+  try {
+    const { gameId, nickname } = req.body;
+    const userId = req.userId;
+    const result = await gameService.joinGame(gameId, userId, nickname || userId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const leaveGame = async (req, res, next) => {
+  try {
+    const { gameId, playerId } = req.body;
+    const result = await gameService.leaveGame(gameId, playerId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getHostedGames = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const result = await gameService.getHostedGames(userId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -83,6 +163,16 @@ export const finishGame = async (req, res, next) => {
   try {
     const { gameId } = req.body;
     const result = await gameService.finishGame(gameId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getCardInfo = async (req, res, next) => {
+  try {
+    const { gameId, cardId } = req.params;
+    const result = await gameService.getCardInfo(gameId, cardId);
     res.json(result);
   } catch (err) {
     next(err);
