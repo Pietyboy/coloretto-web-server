@@ -36,7 +36,7 @@ export const fetchDeleteGame = async (gameId, userId) => {
 };
 
 export const fetchJoinGame = async (gameId, userId, nickName) => {
-  const { rows } = await query('SELECT "game_join_game"($1, $2, $3)', [gameId, userId, nickName]);
+  const { rows } = await query('SELECT "game_join_game"($1, $2, $3)', [gameId, nickName, userId]);
   return rows[0]?.game_join_game;
 };
 
