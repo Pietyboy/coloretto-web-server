@@ -69,7 +69,8 @@ export const getGameScores = async (req, res, next) => {
 export const makeTurnRow = async (req, res, next) => {
   try {
     const { playerId, gameId, rowId } = req.body;
-    const result = await gameService.makeTurnRow(playerId, gameId, rowId);
+    const userId = req.userId;
+    const result = await gameService.makeTurnRow(playerId, gameId, rowId, userId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -92,6 +93,39 @@ export const deleteGame = async (req, res, next) => {
     const { gameId } = req.body;
     const userId = req.userId;
     const result = await gameService.deleteGame(gameId, userId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const pauseGame = async (req, res, next) => {
+  try {
+    const { gameId } = req.body;
+    const userId = req.userId;
+    const result = await gameService.pauseGame(gameId, userId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const resumeGame = async (req, res, next) => {
+  try {
+    const { gameId } = req.body;
+    const userId = req.userId;
+    const result = await gameService.resumeGame(gameId, userId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const resetGame = async (req, res, next) => {
+  try {
+    const { gameId } = req.body;
+    const userId = req.userId;
+    const result = await gameService.resetGame(gameId, userId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -133,7 +167,8 @@ export const getHostedGames = async (req, res, next) => {
 export const makeTurnCard = async (req, res, next) => {
   try {
     const { playerId, gameId, rowId } = req.body;
-    const result = await gameService.makeTurnCard(playerId, gameId, rowId);
+    const userId = req.userId;
+    const result = await gameService.makeTurnCard(playerId, gameId, rowId, userId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -142,8 +177,9 @@ export const makeTurnCard = async (req, res, next) => {
 
 export const chooseColors = async (req, res, next) => {
   try {
-    const { playerId, colorIds } = req.body;
-    const result = await gameService.chooseColors(playerId, colorIds);
+    const { playerId, colorIds, gameId } = req.body;
+    const userId = req.userId;
+    const result = await gameService.chooseColors(playerId, colorIds, gameId, userId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -175,6 +211,35 @@ export const getCardInfo = async (req, res, next) => {
   try {
     const { gameId, cardId } = req.params;
     const result = await gameService.getCardInfo(gameId, cardId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getPlayerForGame = async (req, res, next) => {
+  try {
+    const { gameId } = req.params;
+    const userId = req.userId;
+    const result = await gameService.getPlayerForGame(gameId, userId);
+    if (!result || !result.player_id) {
+      return res.json({ inGame: false });
+    }
+    res.json({
+      inGame: true,
+      player_id: result.player_id,
+      nickname: result.nickname,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const chooseJokerColors = async (req, res, next) => {
+  try {
+    const { gameId, playerId, choices } = req.body;
+    const userId = req.userId;
+    const result = await gameService.chooseJokerColors(gameId, playerId, choices, userId);
     res.json(result);
   } catch (err) {
     next(err);

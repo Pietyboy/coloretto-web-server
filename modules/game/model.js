@@ -25,6 +25,21 @@ export const fetchHostedGames = async (userId) => {
   return rows[0]?.game_get_hosted_games;
 };
 
+export const fetchPauseGame = async (gameId, userId) => {
+  const { rows } = await query('SELECT "game_pause_game"($1, $2)', [gameId, userId]);
+  return rows[0]?.game_pause_game;
+};
+
+export const fetchResumeGame = async (gameId, userId) => {
+  const { rows } = await query('SELECT "game_resume_game"($1, $2)', [gameId, userId]);
+  return rows[0]?.game_resume_game;
+};
+
+export const fetchResetGame = async (gameId, userId) => {
+  const { rows } = await query('SELECT "game_reset_to_waiting"($1, $2)', [gameId, userId]);
+  return rows[0]?.game_reset_to_waiting;
+};
+
 export const fetchStartGame = async (gameId, userId) => {
   const { rows } = await query('SELECT "game_start_game"($1, $2)', [gameId, userId]);
   return rows[0]?.game_start_game;
@@ -73,4 +88,18 @@ export const fetchFinishGame = async (gameId, userId) => {
 export const fetchCardInfo = async (gameId, cardId) => {
   const { rows } = await query('SELECT "game_get_card_info"($1, $2)', [gameId, cardId]);
   return rows[0]?.game_get_card_info;
+};
+
+export const fetchPlayerForGame = async (gameId, userId) => {
+  const { rows } = await query('SELECT "game_get_player_for_game"($1, $2)', [gameId, userId]);
+  return rows[0]?.game_get_player_for_game;
+};
+
+export const fetchChooseJokerColors = async (gameId, playerId, choices) => {
+  const { rows } = await query('SELECT "game_choose_joker_colors"($1, $2, $3::jsonb)', [
+    gameId,
+    playerId,
+    JSON.stringify(choices),
+  ]);
+  return rows[0]?.game_choose_joker_colors;
 };
