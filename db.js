@@ -11,6 +11,10 @@ export const pool = new Pool({
   database: process.env.DB_NAME,
 });
 
+pool.on('error', err => {
+  console.error('Unexpected error on idle PostgreSQL client', err);
+});
+
 export const query = (text, params) => pool.query(text, params);
 
 export default {

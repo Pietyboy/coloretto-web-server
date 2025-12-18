@@ -28,7 +28,7 @@ export const getGameState = async (gameId) => {
   return gameModel.fetchGameState(gameId);
 };
 
-export const createNewGame = async (maxSeatsCount, turnTime, gameName) => {
+export const createNewGame = async (maxSeatsCount, turnTime, gameName, userId) => {
   if (!maxSeatsCount) {
     const err = new Error('Требуется количество мест');
     err.status = 400;
@@ -47,7 +47,13 @@ export const createNewGame = async (maxSeatsCount, turnTime, gameName) => {
     throw err;
   }
 
-  return gameModel.fetchNewGame(maxSeatsCount, turnTime, gameName);
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
+    err.status = 400;
+    throw err;
+  }
+
+  return gameModel.fetchNewGame(maxSeatsCount, turnTime, gameName, userId);
 };
 
 export const getGameScores = async (gameId) => {
@@ -140,7 +146,7 @@ export const resetGame = async (gameId, userId) => {
   return gameModel.fetchResetGame(gameId, userId);
 };
 
-export const joinGame = async (gameId, userId, nickName) => {
+export const joinGame = async (gameId, userId) => {
   if (!gameId) {
     const err = new Error('Требуется ID игры');
     err.status = 400;
@@ -153,7 +159,7 @@ export const joinGame = async (gameId, userId, nickName) => {
     throw err;
   }
 
-  return gameModel.fetchJoinGame(gameId, userId, nickName);
+  return gameModel.fetchJoinGame(gameId, userId);
 };
 
 export const makeTurnRow = async (playerId, gameId, rowId, userId) => {
@@ -221,7 +227,7 @@ export const chooseColors = async (playerId, colorIds, gameId, userId) => {
   return gameModel.fetchChooseColors(playerId, colorIds);
 };
 
-export const createNewPlayer = async (gameId, nickname) => {
+export const createNewPlayer = async (gameId, userId, nickname) => {
   if (!gameId) {
     const err = new Error('Требуется ID игры');
     err.status = 400;
@@ -234,7 +240,7 @@ export const createNewPlayer = async (gameId, nickname) => {
     throw err;
   }
 
-  return gameModel.fetchNewPlayer(gameId, nickname);
+  return gameModel.fetchNewPlayer(gameId, userId, nickname);
 };
 
 export const finishGame = async (gameId, userId) => {
@@ -247,9 +253,15 @@ export const finishGame = async (gameId, userId) => {
   return gameModel.fetchFinishGame(gameId, userId);
 };
 
-export const getCardInfo = async (gameId, cardId) => {
+export const getCardInfo = async (gameId, userId, cardId) => {
   if (!gameId) {
     const err = new Error('Требуется ID игры');
+    err.status = 400;
+    throw err;
+  }
+
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
     err.status = 400;
     throw err;
   }
@@ -260,7 +272,7 @@ export const getCardInfo = async (gameId, cardId) => {
     throw err;
   }
 
-  return gameModel.fetchCardInfo(gameId, cardId);
+  return gameModel.fetchCardInfo(gameId, userId, cardId);
 };
 
 export const leaveGame = async (gameId, playerId, userId) => {
@@ -293,7 +305,7 @@ export const getPlayerForGame = async (gameId, userId) => {
   return gameModel.fetchPlayerForGame(gameId, userId);
 };
 
-export const chooseJokerColors = async (gameId, playerId, choices, userId) => {
+export const setJokerColors = async (gameId, playerId, choices, userId) => {
   if (!gameId) {
     const err = new Error('Требуется ID игры');
     err.status = 400;
@@ -313,5 +325,5 @@ export const chooseJokerColors = async (gameId, playerId, choices, userId) => {
   }
 
   await ensurePlayerOwnership(playerId, gameId, userId);
-  return gameModel.fetchChooseJokerColors(gameId, playerId, choices);
+  return gameModel.fetchSetJokerColors(gameId, userId, choices);
 };
