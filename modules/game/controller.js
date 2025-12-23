@@ -24,10 +24,7 @@ export const getGameState = async (req, res, next) => {
     }
     clearOldAutoMarks();
     let state = await gameService.getGameState(id);
-    const turnDurationSec = Number(state?.turnDuration);
-    const turnDurationMs = Number.isFinite(turnDurationSec) && turnDurationSec > 0 ? turnDurationSec * 1000 : null;
-    const autoMoveTimeoutMs = turnDurationMs ? Math.floor(turnDurationMs / 2) : undefined;
-    const connectionsForAuto = getConnections(id, autoMoveTimeoutMs);
+    const connectionsForAuto = getConnections(id);
 
     const autoPlayed = await maybeAutoMove(id, state, connectionsForAuto);
     if (autoPlayed) {
