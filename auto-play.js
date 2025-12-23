@@ -182,11 +182,47 @@ const pickRowToTakeMostCards = (rows = []) => {
   return sorted[0]?.rowId ?? null;
 };
 
+const normalizeTurnStartMs = (value) => {
+  if (value === null || value === undefined || value === '') return 0;
+
+  if (typeof value === 'number') {
+    const ms = value < 1e12 ? value * 1000 : value;
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    const asNumber = Number(trimmed);
+    if (Number.isFinite(asNumber)) {
+      const ms = asNumber < 1e12 ? asNumber * 1000 : asNumber;
+      return Number.isFinite(ms) ? ms : 0;
+    }
+    const parsed = new Date(trimmed).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+};
+
 const getTurnStartMs = (state) => {
-  const ts = state.currentTurnStartTime;
-  if (!ts) return 0;
-  const parsed = new Date(ts).getTime();
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (!state || typeof state !== 'object') return 0;
+
+  const stateRecord = state;
+  const candidates = [
+    stateRecord.currentTurnStartTime,
+    stateRecord.turnStartTime,
+    stateRecord.turnStart,
+    stateRecord.turn_start,
+    stateRecord.turn_start_time,
+    stateRecord.turn_start_at,
+    stateRecord.current_turn_start_time,
+    stateRecord.current_turn_start,
+    stateRecord.current_turn_start_at,
+  ];
+
+  const candidate = candidates.find(value => value !== null && value !== undefined && value !== '');
+  return normalizeTurnStartMs(candidate);
 };
 
 const markPaused = (handledKey) => {
