@@ -359,11 +359,9 @@ export const maybeAutoMove = async (gameId, state, connections) => {
     const turnDurationSec = Number(state.turnDuration);
     const turnDurationMs = Number.isFinite(turnDurationSec) && turnDurationSec > 0 ? turnDurationSec * 1000 : null;
     const autoMoveTimeoutMs = turnDurationMs ? Math.floor(turnDurationMs / 2) : AUTO_MOVE_TIMEOUT_MS;
-    const isConnected = connections?.get(currentPlayer.playerId);
-
     const timeoutTriggered =
       (turnDurationMs ? elapsed >= turnDurationMs : false) ||
-      (!isConnected && elapsed >= autoMoveTimeoutMs);
+      elapsed >= autoMoveTimeoutMs;
 
     if (!timeoutTriggered) return false;
 
