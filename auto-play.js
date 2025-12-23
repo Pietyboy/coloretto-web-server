@@ -25,7 +25,7 @@ const getUiGameStatus = (state) => {
       || normalized.includes('in_progress')
       || normalized.includes('inprogress')
     ) {
-      return 'in-progress';
+      return 'active';
     }
   }
 
@@ -431,7 +431,7 @@ export const maybeAutoMove = async (gameId, state, connections) => {
       return false;
     }
 
-    if (gameStatus !== 'in-progress') return false;
+    if (gameStatus !== 'active') return false;
 
     markResumed(handledKey);
 
