@@ -65,7 +65,23 @@ export const fetchMakeTurnRow = async (playerId, gameId, rowId) => {
   return rows[0]?.game_make_turn_row;
 };
 
-export const fetchMakeTurnCard = async (playerId, gameId, rowId) => {
+export const fetchMakeTurnCard = async (playerId, gameId, rowId, cardId) => {
+  if (cardId !== undefined && cardId !== null) {
+    try {
+      const { rows } = await query('SELECT "game_make_turn_card"($1, $2, $3, $4)', [
+        playerId,
+        gameId,
+        rowId,
+        cardId,
+      ]);
+      return rows[0]?.game_make_turn_card;
+    } catch (err) {
+      if (err?.code !== '42883') {
+        throw err;
+      }
+    }
+  }
+
   const { rows } = await query('SELECT "game_make_turn_card"($1, $2, $3)', [playerId, gameId, rowId]);
   return rows[0]?.game_make_turn_card;
 };

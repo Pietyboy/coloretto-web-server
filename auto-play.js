@@ -7,6 +7,7 @@ const autoHandled = new Map(); // handledKey -> handledAtMs
 const pauseByTurn = new Map(); // handledKey -> { pausedAtMs: number | null, pausedTotalMs: number, updatedAtMs: number }
 const jokerAutoHandled = new Map(); // handledKey -> handledAtMs
 const scoreAutoHandled = new Map(); // handledKey -> handledAtMs
+const turnStartFallbackByGame = new Map(); // gameId -> { turnKey: string, startedAtMs: number, updatedAtMs: number }
 
 const getUiGameStatus = (state) => {
   if (!state || typeof state !== 'object') return 'unknown';
@@ -51,6 +52,16 @@ const isDeckEmpty = (state) => {
 
   const topCardId = state.firstDeckCard?.cardId ?? state.first_deck_card?.card_id;
   return !topCardId;
+};
+
+const getTopCardId = (state) => {
+  const raw =
+    state?.firstDeckCard?.cardId
+    ?? state?.first_deck_card?.card_id
+    ?? state?.topCardId
+    ?? state?.top_card_id;
+  const asNumber = Number(raw);
+  return Number.isFinite(asNumber) ? asNumber : null;
 };
 
 const areAllRowsCollected = (state) => {
@@ -225,6 +236,38 @@ const getTurnStartMs = (state) => {
   return normalizeTurnStartMs(candidate);
 };
 
+const getTurnKey = (currentPlayer, state) => {
+  const playerId = Number(currentPlayer?.playerId ?? currentPlayer?.player_id);
+  if (!Number.isFinite(playerId) || playerId <= 0) return null;
+
+  const turnNumberRaw =
+    currentPlayer?.turnNumber
+    ?? currentPlayer?.turn_number
+    ?? state?.currentTurnNumber
+    ?? state?.current_turn_number
+    ?? state?.turnNumber
+    ?? state?.turn_number;
+
+  const turnNumber = Number(turnNumberRaw);
+  const suffix = Number.isFinite(turnNumber) ? String(turnNumber) : 'unknown';
+  return `${playerId}:${suffix}`;
+};
+
+const getFallbackTurnStartMs = (gameId, currentPlayer, state) => {
+  const turnKey = getTurnKey(currentPlayer, state);
+  if (!turnKey) return 0;
+
+  const now = Date.now();
+  const existing = turnStartFallbackByGame.get(gameId);
+  if (!existing || existing.turnKey !== turnKey) {
+    turnStartFallbackByGame.set(gameId, { turnKey, startedAtMs: now, updatedAtMs: now });
+    return now;
+  }
+
+  existing.updatedAtMs = now;
+  return existing.startedAtMs;
+};
+
 const markPaused = (handledKey) => {
   if (!pauseByTurn.has(handledKey)) {
     pauseByTurn.set(handledKey, { pausedAtMs: null, pausedTotalMs: 0, updatedAtMs: 0 });
@@ -374,7 +417,10 @@ export const maybeAutoMove = async (gameId, state, connections) => {
     const currentPlayer = Array.isArray(state.players) ? state.players.find(p => p.isCurrentTurn) : null;
     if (!currentPlayer?.playerId) return false;
 
-    const turnStartMs = getTurnStartMs(state);
+    let turnStartMs = getTurnStartMs(state);
+    if (!turnStartMs) {
+      turnStartMs = getFallbackTurnStartMs(gameId, currentPlayer, state);
+    }
     if (!turnStartMs) return false;
 
     const handledKey = `${gameId}:${turnStartMs}`;
@@ -417,7 +463,12 @@ export const maybeAutoMove = async (gameId, state, connections) => {
 
       const rowIdForCard = pickRowForCard(rows);
       if (rowIdForCard) {
-        await fetchMakeTurnCard(currentPlayer.playerId, gameId, rowIdForCard);
+        const topCardId = getTopCardId(state);
+        if (!topCardId) {
+          autoHandled.delete(handledKey);
+          return false;
+        }
+        await fetchMakeTurnCard(currentPlayer.playerId, gameId, rowIdForCard, topCardId);
         return true;
       }
 
@@ -462,6 +513,14 @@ export const clearOldAutoMarks = () => {
     if (typeof handledAtMs !== 'number') continue;
     if (now - handledAtMs > AUTO_MOVE_CLEANUP_TTL_MS) {
       jokerAutoHandled.delete(key);
+    }
+  }
+
+  for (const [gameId, fallback] of turnStartFallbackByGame.entries()) {
+    const updatedAtMs = fallback?.updatedAtMs;
+    if (typeof updatedAtMs !== 'number') continue;
+    if (now - updatedAtMs > AUTO_MOVE_CLEANUP_TTL_MS) {
+      turnStartFallbackByGame.delete(gameId);
     }
   }
 
