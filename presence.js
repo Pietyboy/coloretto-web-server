@@ -9,6 +9,8 @@ const PRESENCE_TABLE_NAME = 'game_player_presence';
 
 let dbPermanentlyDisabled = false;
 let dbUnavailableUntilMs = 0;
+let presenceTableEnsured = false;
+let presenceTableEnsuringPromise = null;
 
 const shouldUseDbPresence = () => {
   if (dbPermanentlyDisabled) return false;
@@ -30,6 +32,37 @@ const disableDbPresence = (err) => {
 
   dbUnavailableUntilMs = Date.now() + 60_000;
   console.warn('[presence] DB presence temporarily unavailable; falling back to in-memory presence.', err?.message ?? err);
+};
+
+const ensurePresenceTable = async () => {
+  if (presenceTableEnsured) return true;
+  if (presenceTableEnsuringPromise) return presenceTableEnsuringPromise;
+
+  presenceTableEnsuringPromise = (async () => {
+    try {
+      await query(
+        `CREATE TABLE IF NOT EXISTS ${PRESENCE_TABLE_NAME} (
+          game_id INTEGER NOT NULL,
+          player_id INTEGER NOT NULL,
+          last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (game_id, player_id)
+        );`,
+      );
+      await query(
+        `CREATE INDEX IF NOT EXISTS ${PRESENCE_TABLE_NAME}_game_last_seen_idx
+         ON ${PRESENCE_TABLE_NAME} (game_id, last_seen_at);`,
+      );
+      presenceTableEnsured = true;
+      return true;
+    } catch (err) {
+      disableDbPresence(err);
+      return false;
+    } finally {
+      presenceTableEnsuringPromise = null;
+    }
+  })();
+
+  return presenceTableEnsuringPromise;
 };
 
 const touchPresenceMemory = (gameId, playerId) => {
@@ -69,6 +102,9 @@ export const touchPresence = async (gameId, playerId) => {
   if (!Number.isFinite(normalizedGameId) || !Number.isFinite(normalizedPlayerId)) return;
 
   try {
+    const ensured = await ensurePresenceTable();
+    if (!ensured) return;
+
     await query(
       `INSERT INTO ${PRESENCE_TABLE_NAME} (game_id, player_id, last_seen_at)
        VALUES ($1, $2, NOW())
@@ -91,6 +127,11 @@ export const getConnections = async (gameId, timeoutMs) => {
   if (!Number.isFinite(normalizedGameId)) return new Map();
 
   try {
+    const ensured = await ensurePresenceTable();
+    if (!ensured) {
+      return getConnectionsMemory(gameId, effectiveTimeoutMs);
+    }
+
     const { rows } = await query(
       `SELECT player_id
        FROM ${PRESENCE_TABLE_NAME}

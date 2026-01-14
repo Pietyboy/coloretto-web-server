@@ -2,6 +2,14 @@ import { fetchChooseColors, fetchChooseJokerColors, fetchMakeTurnCard, fetchMake
 
 const AUTO_MOVE_TIMEOUT_MS = Number(process.env.AUTO_MOVE_TIMEOUT_MS || 20000);
 const AUTO_MOVE_CLEANUP_TTL_MS = Number(process.env.AUTO_MOVE_CLEANUP_TTL_MS || 60 * 60 * 1000);
+const TURN_START_TIMEZONE_OFFSET_MINUTES = (() => {
+  const raw = process.env.TURN_START_TIMEZONE_OFFSET_MINUTES;
+  if (raw === undefined) return -180;
+  const asNumber = Number(raw);
+  return Number.isFinite(asNumber) ? asNumber : -180;
+})();
+const TURN_START_HAS_TZ_RE = /([zZ]|[+-]\d{2}:?\d{2})$/;
+const TURN_START_NAIVE_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/;
 
 const autoHandled = new Map(); // handledKey -> handledAtMs
 const pauseByTurn = new Map(); // handledKey -> { pausedAtMs: number | null, pausedTotalMs: number, updatedAtMs: number }
@@ -210,7 +218,17 @@ const normalizeTurnStartMs = (value) => {
       return Number.isFinite(ms) ? ms : 0;
     }
     const parsed = new Date(trimmed).getTime();
-    return Number.isFinite(parsed) ? parsed : 0;
+    if (!Number.isFinite(parsed)) return 0;
+
+    const hasTimezone = TURN_START_HAS_TZ_RE.test(trimmed);
+    const isNaiveDateTime = TURN_START_NAIVE_DATETIME_RE.test(trimmed);
+
+    if (isNaiveDateTime && !hasTimezone && Number.isFinite(TURN_START_TIMEZONE_OFFSET_MINUTES)) {
+      const serverOffsetMinutes = new Date(parsed).getTimezoneOffset();
+      return parsed + (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
+    }
+
+    return parsed;
   }
 
   return 0;
