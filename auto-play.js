@@ -253,6 +253,14 @@ const getTurnKey = (currentPlayer, state) => {
   return `${playerId}:${suffix}`;
 };
 
+const getApiError = (result) => {
+  if (!result || typeof result !== 'object') return null;
+  const error = result.error;
+  if (typeof error !== 'string') return null;
+  const trimmed = error.trim();
+  return trimmed ? trimmed : null;
+};
+
 const getFallbackTurnStartMs = (gameId, currentPlayer, state) => {
   const turnKey = getTurnKey(currentPlayer, state);
   if (!turnKey) return 0;
@@ -414,7 +422,9 @@ export const maybeAutoMove = async (gameId, state, connections) => {
       return await autoChooseScoreColors(gameId, state, connections);
     }
 
-    const currentPlayer = Array.isArray(state.players) ? state.players.find(p => p.isCurrentTurn) : null;
+    const currentPlayer = Array.isArray(state.players)
+      ? state.players.find(p => p.isCurrentTurn || p.is_current_turn)
+      : null;
     const currentPlayerId = Number(currentPlayer?.playerId ?? currentPlayer?.player_id);
     if (!Number.isFinite(currentPlayerId) || currentPlayerId <= 0) return false;
 
@@ -458,7 +468,13 @@ export const maybeAutoMove = async (gameId, state, connections) => {
           autoHandled.delete(handledKey);
           return false;
         }
-        await fetchMakeTurnRow(currentPlayerId, gameId, rowIdToTake);
+        const result = await fetchMakeTurnRow(currentPlayerId, gameId, rowIdToTake);
+        const error = getApiError(result);
+        if (error) {
+          autoHandled.delete(handledKey);
+          console.warn('Auto-move failed to take row', { error, gameId, playerId: currentPlayerId, rowId: rowIdToTake });
+          return false;
+        }
         return true;
       }
 
@@ -469,7 +485,25 @@ export const maybeAutoMove = async (gameId, state, connections) => {
           autoHandled.delete(handledKey);
           return false;
         }
-        await fetchMakeTurnCard(currentPlayerId, gameId, rowIdForCard, topCardId);
+        const result = await fetchMakeTurnCard(currentPlayerId, gameId, rowIdForCard, topCardId);
+        const error = getApiError(result);
+        if (error) {
+          const fallbackResult = await fetchMakeTurnCard(currentPlayerId, gameId, rowIdForCard);
+          const fallbackError = getApiError(fallbackResult);
+
+          if (fallbackError) {
+            autoHandled.delete(handledKey);
+            console.warn('Auto-move failed to place card', {
+              error,
+              fallbackError,
+              gameId,
+              playerId: currentPlayerId,
+              rowId: rowIdForCard,
+              cardId: topCardId,
+            });
+            return false;
+          }
+        }
         return true;
       }
 
@@ -478,7 +512,13 @@ export const maybeAutoMove = async (gameId, state, connections) => {
         autoHandled.delete(handledKey);
         return false;
       }
-      await fetchMakeTurnRow(currentPlayerId, gameId, rowIdToTake);
+      const result = await fetchMakeTurnRow(currentPlayerId, gameId, rowIdToTake);
+      const error = getApiError(result);
+      if (error) {
+        autoHandled.delete(handledKey);
+        console.warn('Auto-move failed to take row', { error, gameId, playerId: currentPlayerId, rowId: rowIdToTake });
+        return false;
+      }
       return true;
     } catch (err) {
       autoHandled.delete(handledKey);
