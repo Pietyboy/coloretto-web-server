@@ -415,7 +415,8 @@ export const maybeAutoMove = async (gameId, state, connections) => {
     }
 
     const currentPlayer = Array.isArray(state.players) ? state.players.find(p => p.isCurrentTurn) : null;
-    if (!currentPlayer?.playerId) return false;
+    const currentPlayerId = Number(currentPlayer?.playerId ?? currentPlayer?.player_id);
+    if (!Number.isFinite(currentPlayerId) || currentPlayerId <= 0) return false;
 
     let turnStartMs = getTurnStartMs(state);
     if (!turnStartMs) {
@@ -440,10 +441,10 @@ export const maybeAutoMove = async (gameId, state, connections) => {
     const elapsed = now - turnStartMs - pausedTotalMs;
     const turnDurationSec = Number(state.turnDuration);
     const turnDurationMs = Number.isFinite(turnDurationSec) && turnDurationSec > 0 ? turnDurationSec * 1000 : null;
+    const isConnected = connections?.get(currentPlayerId) ?? false;
+    const fullTimeoutMs = turnDurationMs ?? AUTO_MOVE_TIMEOUT_MS;
     const autoMoveTimeoutMs = turnDurationMs ? Math.floor(turnDurationMs / 2) : AUTO_MOVE_TIMEOUT_MS;
-    const timeoutTriggered =
-      (turnDurationMs ? elapsed >= turnDurationMs : false) ||
-      elapsed >= autoMoveTimeoutMs;
+    const timeoutTriggered = elapsed >= fullTimeoutMs || (!isConnected && elapsed >= autoMoveTimeoutMs);
 
     if (!timeoutTriggered) return false;
 
@@ -457,7 +458,7 @@ export const maybeAutoMove = async (gameId, state, connections) => {
           autoHandled.delete(handledKey);
           return false;
         }
-        await fetchMakeTurnRow(currentPlayer.playerId, gameId, rowIdToTake);
+        await fetchMakeTurnRow(currentPlayerId, gameId, rowIdToTake);
         return true;
       }
 
@@ -468,7 +469,7 @@ export const maybeAutoMove = async (gameId, state, connections) => {
           autoHandled.delete(handledKey);
           return false;
         }
-        await fetchMakeTurnCard(currentPlayer.playerId, gameId, rowIdForCard, topCardId);
+        await fetchMakeTurnCard(currentPlayerId, gameId, rowIdForCard, topCardId);
         return true;
       }
 
@@ -477,7 +478,7 @@ export const maybeAutoMove = async (gameId, state, connections) => {
         autoHandled.delete(handledKey);
         return false;
       }
-      await fetchMakeTurnRow(currentPlayer.playerId, gameId, rowIdToTake);
+      await fetchMakeTurnRow(currentPlayerId, gameId, rowIdToTake);
       return true;
     } catch (err) {
       autoHandled.delete(handledKey);
