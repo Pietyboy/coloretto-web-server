@@ -61,7 +61,7 @@ export const fetchLeaveGame = async (gameId, playerId, userId) => {
 };
 
 export const fetchMakeTurnRow = async (playerId, gameId, rowId) => {
-  const { rows } = await query('SELECT "game_make_turn_row"($1, $2, $3)', [playerId, gameId, rowId]);
+  const { rows } = await query('SELECT "game_make_turn_row"($1, $2, $3)', [gameId, playerId, rowId]);
   return rows[0]?.game_make_turn_row;
 };
 

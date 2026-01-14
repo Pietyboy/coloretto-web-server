@@ -19,24 +19,26 @@ export const getGameState = async (req, res, next) => {
       const player = await gameService.getPlayerForGame(id, userId);
       const playerId = player?.player_id ?? player?.playerId;
       if (playerId) {
-        touchPresence(id, playerId);
+        await touchPresence(id, playerId);
       }
     }
     clearOldAutoMarks();
     let state = await gameService.getGameState(id);
-    const connectionsForAuto = getConnections(id);
+    const connectionsForAuto = await getConnections(id);
 
     const autoPlayed = await maybeAutoMove(id, state, connectionsForAuto);
     if (autoPlayed) {
       state = await gameService.getGameState(id);
     }
 
-    const connectionsForUi = getConnections(id);
     const playersWithPresence = Array.isArray(state?.players)
-      ? state.players.map(p => ({
-          ...p,
-          isConnected: connectionsForUi.get(p.playerId) ?? false,
-        }))
+      ? state.players.map(p => {
+          const playerId = Number(p?.playerId ?? p?.player_id);
+          return {
+            ...p,
+            isConnected: Number.isFinite(playerId) ? connectionsForAuto.get(playerId) ?? false : false,
+          };
+        })
       : state?.players;
 
     res.json({
