@@ -1,7 +1,50 @@
 import { fetchChooseColors, fetchChooseJokerColors, fetchMakeTurnCard, fetchMakeTurnRow } from './modules/game/model.js';
 
-const AUTO_MOVE_TIMEOUT_MS = Number(process.env.AUTO_MOVE_TIMEOUT_MS || 20000);
-const AUTO_MOVE_CLEANUP_TTL_MS = Number(process.env.AUTO_MOVE_CLEANUP_TTL_MS || 60 * 60 * 1000);
+const DEFAULT_AUTO_MOVE_TIMEOUT_MS = 20_000;
+const DEFAULT_AUTO_MOVE_CLEANUP_TTL_MS = 60 * 60 * 1000;
+
+const AUTO_MOVE_DEBUG =
+  ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTO_MOVE_DEBUG ?? '').trim().toLowerCase());
+
+const debugAutoMove = (message, payload) => {
+  if (!AUTO_MOVE_DEBUG) return;
+  if (payload !== undefined) {
+    console.log('[auto-move]', message, payload);
+    return;
+  }
+  console.log('[auto-move]', message);
+};
+
+const parseEnvDurationMs = (value, fallbackMs) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.floor(value);
+  if (typeof value !== 'string') return fallbackMs;
+
+  const raw = value.trim();
+  if (!raw) return fallbackMs;
+
+  const normalized = raw.replace(/_/g, '').toLowerCase();
+  const match = normalized.match(/^(-?\d+(?:\.\d+)?)(ms|s|m|h)?$/);
+
+  if (!match) {
+    const asNumber = Number(normalized);
+    if (Number.isFinite(asNumber) && asNumber > 0) return Math.floor(asNumber);
+    return fallbackMs;
+  }
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return fallbackMs;
+
+  const unit = match[2] ?? 'ms';
+  if (unit === 'ms') return Math.floor(amount);
+  if (unit === 's') return Math.floor(amount * 1000);
+  if (unit === 'm') return Math.floor(amount * 60_000);
+  if (unit === 'h') return Math.floor(amount * 3_600_000);
+
+  return fallbackMs;
+};
+
+const AUTO_MOVE_TIMEOUT_MS = parseEnvDurationMs(process.env.AUTO_MOVE_TIMEOUT_MS, DEFAULT_AUTO_MOVE_TIMEOUT_MS);
+const AUTO_MOVE_CLEANUP_TTL_MS = parseEnvDurationMs(process.env.AUTO_MOVE_CLEANUP_TTL_MS, DEFAULT_AUTO_MOVE_CLEANUP_TTL_MS);
 const TURN_START_TIMEZONE_OFFSET_MINUTES = (() => {
   const raw = process.env.TURN_START_TIMEZONE_OFFSET_MINUTES;
   if (raw === undefined) return -180;
@@ -9,7 +52,90 @@ const TURN_START_TIMEZONE_OFFSET_MINUTES = (() => {
   return Number.isFinite(asNumber) ? asNumber : -180;
 })();
 const TURN_START_HAS_TZ_RE = /([zZ]|[+-]\d{2}:?\d{2})$/;
-const TURN_START_NAIVE_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/;
+const TURN_START_NAIVE_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?$/;
+const TURN_START_TZ_HOURS_ONLY_RE = /[+-]\d{2}$/;
+const TURN_START_PARTS_RE =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([zZ])|([+-])(\d{2})(?::?(\d{2}))?)?$/;
+
+const normalizeTurnStartString = (value) => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  if (TURN_START_TZ_HOURS_ONLY_RE.test(trimmed)) {
+    return `${trimmed}:00`;
+  }
+
+  return trimmed;
+};
+
+const pickBestNaiveTurnStartMs = (utcCandidate, offsetCandidate) => {
+  if (!Number.isFinite(utcCandidate) && !Number.isFinite(offsetCandidate)) return 0;
+  if (!Number.isFinite(utcCandidate)) return offsetCandidate;
+  if (!Number.isFinite(offsetCandidate)) return utcCandidate;
+
+  const now = Date.now();
+  const utcSkewMs = utcCandidate - now;
+  const offsetSkewMs = offsetCandidate - now;
+  const futureToleranceMs = 60_000;
+
+  const utcTooFuture = utcSkewMs > futureToleranceMs;
+  const offsetTooFuture = offsetSkewMs > futureToleranceMs;
+
+  if (utcTooFuture && !offsetTooFuture) return offsetCandidate;
+  if (!utcTooFuture && offsetTooFuture) return utcCandidate;
+
+  return Math.abs(offsetSkewMs) < Math.abs(utcSkewMs) ? offsetCandidate : utcCandidate;
+};
+
+const parseTurnStartStringToMs = (value) => {
+  const match = value.match(TURN_START_PARTS_RE);
+  if (!match) return 0;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = match[6] !== undefined ? Number(match[6]) : 0;
+  const fraction = match[7];
+
+  if (
+    !Number.isFinite(year)
+    || !Number.isFinite(month)
+    || !Number.isFinite(day)
+    || !Number.isFinite(hour)
+    || !Number.isFinite(minute)
+    || !Number.isFinite(second)
+  ) {
+    return 0;
+  }
+
+  const ms = fraction ? Number(fraction.padEnd(3, '0').slice(0, 3)) : 0;
+  const utcBase = Date.UTC(year, month - 1, day, hour, minute, second, Number.isFinite(ms) ? ms : 0);
+
+  if (!Number.isFinite(utcBase)) return 0;
+
+  if (match[8]) {
+    return utcBase;
+  }
+
+  const sign = match[9];
+  if (sign) {
+    const tzHours = Number(match[10]);
+    const tzMinutes = match[11] !== undefined ? Number(match[11]) : 0;
+    if (!Number.isFinite(tzHours) || !Number.isFinite(tzMinutes)) return 0;
+
+    const totalMinutes = tzHours * 60 + tzMinutes;
+    const offsetMinutes = sign === '-' ? -totalMinutes : totalMinutes;
+    return utcBase - offsetMinutes * 60_000;
+  }
+
+  if (!Number.isFinite(TURN_START_TIMEZONE_OFFSET_MINUTES)) return utcBase;
+
+  const offsetMinutesFromUtc = -TURN_START_TIMEZONE_OFFSET_MINUTES;
+  const offsetCandidate = utcBase - offsetMinutesFromUtc * 60_000;
+  return pickBestNaiveTurnStartMs(utcBase, offsetCandidate);
+};
 
 const autoHandled = new Map(); // handledKey -> handledAtMs
 const pauseByTurn = new Map(); // handledKey -> { pausedAtMs: number | null, pausedTotalMs: number, updatedAtMs: number }
@@ -217,21 +343,60 @@ const normalizeTurnStartMs = (value) => {
       const ms = asNumber < 1e12 ? asNumber * 1000 : asNumber;
       return Number.isFinite(ms) ? ms : 0;
     }
-    const parsed = new Date(trimmed).getTime();
-    if (!Number.isFinite(parsed)) return 0;
+    const normalized = normalizeTurnStartString(trimmed);
+    const parsed = new Date(normalized).getTime();
+    if (!Number.isFinite(parsed)) {
+      const fallbackParsed = parseTurnStartStringToMs(normalized);
+      return Number.isFinite(fallbackParsed) ? fallbackParsed : 0;
+    }
 
-    const hasTimezone = TURN_START_HAS_TZ_RE.test(trimmed);
-    const isNaiveDateTime = TURN_START_NAIVE_DATETIME_RE.test(trimmed);
+    const hasTimezone = TURN_START_HAS_TZ_RE.test(normalized);
+    const isNaiveDateTime = TURN_START_NAIVE_DATETIME_RE.test(normalized);
 
     if (isNaiveDateTime && !hasTimezone && Number.isFinite(TURN_START_TIMEZONE_OFFSET_MINUTES)) {
       const serverOffsetMinutes = new Date(parsed).getTimezoneOffset();
-      return parsed + (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
+      const shiftMs = (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
+      const shifted = parsed + shiftMs;
+      const now = Date.now();
+      const parsedSkewMs = parsed - now;
+      const shiftedSkewMs = shifted - now;
+      const futureToleranceMs = 60_000;
+
+      const parsedTooFuture = parsedSkewMs > futureToleranceMs;
+      const shiftedTooFuture = shiftedSkewMs > futureToleranceMs;
+
+      if (parsedTooFuture && !shiftedTooFuture) return shifted;
+      if (!parsedTooFuture && shiftedTooFuture) return parsed;
+
+      return Math.abs(shiftedSkewMs) < Math.abs(parsedSkewMs) ? shifted : parsed;
     }
 
     return parsed;
   }
 
   return 0;
+};
+
+const getTurnDurationMs = (state) => {
+  if (!state || typeof state !== 'object') return null;
+
+  const durationSecRaw =
+    state.turnDuration
+    ?? state.turn_duration
+    ?? state.turnDurationSeconds
+    ?? state.turn_duration_seconds;
+
+  const durationSec = Number(durationSecRaw);
+  if (Number.isFinite(durationSec) && durationSec > 0) return Math.floor(durationSec * 1000);
+
+  const durationMsRaw =
+    state.turnDurationMs
+    ?? state.turn_duration_ms;
+
+  const durationMs = Number(durationMsRaw);
+  if (Number.isFinite(durationMs) && durationMs > 0) return Math.floor(durationMs);
+
+  return null;
 };
 
 const getTurnStartMs = (state) => {
@@ -432,6 +597,7 @@ export const maybeAutoMove = async (gameId, state, connections) => {
     if (!state || !gameId) return false;
 
     const gameStatus = getUiGameStatus(state);
+    debugAutoMove('Tick', { gameId, gameStatus });
     if (gameStatus === 'waiting' || gameStatus === 'unknown') return false;
     if (gameStatus === 'finished') {
       const jokersAutoPlayed = await autoChooseJokerColors(gameId, state, connections);
@@ -444,13 +610,20 @@ export const maybeAutoMove = async (gameId, state, connections) => {
       ? state.players.find(p => p.isCurrentTurn || p.is_current_turn)
       : null;
     const currentPlayerId = Number(currentPlayer?.playerId ?? currentPlayer?.player_id);
-    if (!Number.isFinite(currentPlayerId) || currentPlayerId <= 0) return false;
+    if (!Number.isFinite(currentPlayerId) || currentPlayerId <= 0) {
+      debugAutoMove('Skip: no current player', { gameId });
+      return false;
+    }
 
     let turnStartMs = getTurnStartMs(state);
     if (!turnStartMs) {
+      debugAutoMove('Missing turn_start; using fallback', { gameId, currentPlayerId });
       turnStartMs = getFallbackTurnStartMs(gameId, currentPlayer, state);
     }
-    if (!turnStartMs) return false;
+    if (!turnStartMs) {
+      debugAutoMove('Skip: no turn_start available', { gameId, currentPlayerId });
+      return false;
+    }
 
     const handledKey = `${gameId}:${turnStartMs}`;
     if (autoHandled.has(handledKey)) return false;
@@ -466,15 +639,48 @@ export const maybeAutoMove = async (gameId, state, connections) => {
 
     const now = Date.now();
     const pausedTotalMs = pauseByTurn.get(handledKey)?.pausedTotalMs ?? 0;
-    const elapsed = now - turnStartMs - pausedTotalMs;
-    const turnDurationSec = Number(state.turnDuration);
-    const turnDurationMs = Number.isFinite(turnDurationSec) && turnDurationSec > 0 ? turnDurationSec * 1000 : null;
+    const elapsed = Math.max(0, now - turnStartMs - pausedTotalMs);
+    const turnDurationMs = getTurnDurationMs(state);
     const isConnected = connections?.get(currentPlayerId) ?? false;
     const fullTimeoutMs = turnDurationMs ?? AUTO_MOVE_TIMEOUT_MS;
     const autoMoveTimeoutMs = turnDurationMs ? Math.floor(turnDurationMs / 2) : AUTO_MOVE_TIMEOUT_MS;
     const timeoutTriggered = elapsed >= fullTimeoutMs || (!isConnected && elapsed >= autoMoveTimeoutMs);
 
+    if (!Number.isFinite(fullTimeoutMs) || fullTimeoutMs <= 0) {
+      debugAutoMove('Invalid timeout config', {
+        gameId,
+        currentPlayerId,
+        turnStartMs,
+        elapsed,
+        turnDurationMs,
+        fullTimeoutMs,
+        autoMoveTimeoutMs,
+        isConnected,
+        AUTO_MOVE_TIMEOUT_MS,
+      });
+    }
+
+    if (AUTO_MOVE_DEBUG && elapsed > 0 && elapsed % 10_000 < 1_000) {
+      debugAutoMove('Progress', {
+        gameId,
+        currentPlayerId,
+        elapsed,
+        fullTimeoutMs,
+        autoMoveTimeoutMs,
+        isConnected,
+      });
+    }
+
     if (!timeoutTriggered) return false;
+
+    debugAutoMove('Triggered', {
+      gameId,
+      currentPlayerId,
+      elapsed,
+      fullTimeoutMs,
+      autoMoveTimeoutMs,
+      isConnected,
+    });
 
     const rows = Array.isArray(state.rows) ? state.rows : [];
 
@@ -490,6 +696,7 @@ export const maybeAutoMove = async (gameId, state, connections) => {
         const error = getApiError(result);
         if (error) {
           autoHandled.delete(handledKey);
+          debugAutoMove('Failed: take row', { error, gameId, playerId: currentPlayerId, rowId: rowIdToTake });
           console.warn('Auto-move failed to take row', { error, gameId, playerId: currentPlayerId, rowId: rowIdToTake });
           return false;
         }
@@ -511,6 +718,14 @@ export const maybeAutoMove = async (gameId, state, connections) => {
 
           if (fallbackError) {
             autoHandled.delete(handledKey);
+            debugAutoMove('Failed: place card', {
+              error,
+              fallbackError,
+              gameId,
+              playerId: currentPlayerId,
+              rowId: rowIdForCard,
+              cardId: topCardId,
+            });
             console.warn('Auto-move failed to place card', {
               error,
               fallbackError,
@@ -534,6 +749,7 @@ export const maybeAutoMove = async (gameId, state, connections) => {
       const error = getApiError(result);
       if (error) {
         autoHandled.delete(handledKey);
+        debugAutoMove('Failed: take row', { error, gameId, playerId: currentPlayerId, rowId: rowIdToTake });
         console.warn('Auto-move failed to take row', { error, gameId, playerId: currentPlayerId, rowId: rowIdToTake });
         return false;
       }

@@ -1,6 +1,36 @@
 import { query } from './db.js';
 
-const PRESENCE_TIMEOUT_MS = Number(process.env.PRESENCE_TIMEOUT_MS || 30000);
+const DEFAULT_PRESENCE_TIMEOUT_MS = 30_000;
+
+const parseEnvDurationMs = (value, fallbackMs) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.floor(value);
+  if (typeof value !== 'string') return fallbackMs;
+
+  const raw = value.trim();
+  if (!raw) return fallbackMs;
+
+  const normalized = raw.replace(/_/g, '').toLowerCase();
+  const match = normalized.match(/^(-?\d+(?:\.\d+)?)(ms|s|m|h)?$/);
+
+  if (!match) {
+    const asNumber = Number(normalized);
+    if (Number.isFinite(asNumber) && asNumber > 0) return Math.floor(asNumber);
+    return fallbackMs;
+  }
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return fallbackMs;
+
+  const unit = match[2] ?? 'ms';
+  if (unit === 'ms') return Math.floor(amount);
+  if (unit === 's') return Math.floor(amount * 1000);
+  if (unit === 'm') return Math.floor(amount * 60_000);
+  if (unit === 'h') return Math.floor(amount * 3_600_000);
+
+  return fallbackMs;
+};
+
+const PRESENCE_TIMEOUT_MS = parseEnvDurationMs(process.env.PRESENCE_TIMEOUT_MS, DEFAULT_PRESENCE_TIMEOUT_MS);
 const PRESENCE_STORAGE = String(process.env.PRESENCE_STORAGE || 'auto').toLowerCase();
 
 const presenceMap = new Map();
@@ -80,7 +110,8 @@ const getConnectionsMemory = (gameId, timeoutMs) => {
   const id = String(gameId);
   const gamePresence = presenceMap.get(id);
   if (!gamePresence) return new Map();
-  const effectiveTimeoutMs = typeof timeoutMs === 'number' ? timeoutMs : PRESENCE_TIMEOUT_MS;
+  const effectiveTimeoutMs =
+    typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : PRESENCE_TIMEOUT_MS;
   const now = Date.now();
   const result = new Map();
   for (const [playerId, ts] of gamePresence.entries()) {
@@ -117,7 +148,8 @@ export const touchPresence = async (gameId, playerId) => {
 };
 
 export const getConnections = async (gameId, timeoutMs) => {
-  const effectiveTimeoutMs = typeof timeoutMs === 'number' ? timeoutMs : PRESENCE_TIMEOUT_MS;
+  const effectiveTimeoutMs =
+    typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : PRESENCE_TIMEOUT_MS;
 
   if (!shouldUseDbPresence()) {
     return getConnectionsMemory(gameId, effectiveTimeoutMs);
