@@ -234,13 +234,76 @@ export const createNewPlayer = async (gameId, userId, nickname) => {
     throw err;
   }
 
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
+    err.status = 400;
+    throw err;
+  }
+
   if (!nickname) {
     const err = new Error('Требуется никнейм');
     err.status = 400;
     throw err;
   }
 
-  return gameModel.fetchNewPlayer(gameId, userId, nickname);
+  const result = await gameModel.fetchNewPlayer(gameId, userId, nickname);
+
+  const error = result && typeof result === 'object' ? result.error : undefined;
+  if (typeof error === 'string' && error.trim()) {
+    return result;
+  }
+
+  try {
+    const state = await gameModel.fetchGameState(gameId);
+    if (!state || typeof state !== 'object') {
+      return result;
+    }
+
+    const stateRecord = state;
+    const statusCandidate = stateRecord.gameStatus ?? stateRecord.status ?? stateRecord.game_status;
+    const isWaiting =
+      typeof statusCandidate === 'string' && statusCandidate.trim().toLowerCase().includes('wait');
+
+    if (!isWaiting) {
+      return result;
+    }
+
+    const rawMax = stateRecord.maxPlayerCount ?? stateRecord.max_player_count;
+    const maxPlayerCount = Number(rawMax);
+    if (!Number.isFinite(maxPlayerCount) || maxPlayerCount <= 0) {
+      return result;
+    }
+
+    const playersCount = Array.isArray(stateRecord.players)
+      ? stateRecord.players.length
+      : Number(
+          stateRecord.currentPlayersCount ??
+            stateRecord.current_players_count ??
+            stateRecord.playersCount ??
+            stateRecord.players_count,
+        );
+
+    if (!Number.isFinite(playersCount) || playersCount !== maxPlayerCount) {
+      return result;
+    }
+
+    const hostUserId = await gameModel.fetchGameHostUserId(gameId);
+    const startUserIds = [];
+    if (hostUserId) startUserIds.push(hostUserId);
+    if (!hostUserId || Number(hostUserId) !== Number(userId)) startUserIds.push(userId);
+
+    for (const startUserId of startUserIds) {
+      const startResult = await gameModel.fetchStartGame(gameId, startUserId);
+      const startError = startResult && typeof startResult === 'object' ? startResult.error : undefined;
+      if (!(typeof startError === 'string' && startError.trim())) {
+        break;
+      }
+    }
+  } catch (_err) {
+    return result;
+  }
+
+  return result;
 };
 
 export const finishGame = async (gameId, userId) => {

@@ -96,6 +96,50 @@ export const fetchNewPlayer = async (gameId, userId, nickname) => {
   return rows[0]?.game_create_player;
 };
 
+const resolveHostUserId = async (gameId, tableName, gameIdColumn, userIdColumn) => {
+  const { rows } = await query(
+    `SELECT "${userIdColumn}" as user_id
+     FROM ${tableName}
+     WHERE "${gameIdColumn}" = $1
+     LIMIT 1`,
+    [gameId],
+  );
+
+  const raw = rows[0]?.user_id;
+  const asNumber = Number(raw);
+  return Number.isFinite(asNumber) ? asNumber : null;
+};
+
+export const fetchGameHostUserId = async (gameId) => {
+  const normalizedGameId = Number(gameId);
+  if (!Number.isFinite(normalizedGameId)) return null;
+
+  const tablesToTry = ['game_games', 'games'].map(name => `"${name}"`);
+  const gameIdColumns = ['game_id', 'id'];
+  const userIdColumns = ['user_id', 'creator_id', 'host_id', 'host_user_id', 'owner_id'];
+
+  for (const tableName of tablesToTry) {
+    for (const gameIdColumn of gameIdColumns) {
+      for (const userIdColumn of userIdColumns) {
+        try {
+          const userId = await resolveHostUserId(normalizedGameId, tableName, gameIdColumn, userIdColumn);
+          if (userId !== null) {
+            return userId;
+          }
+        } catch (err) {
+          const code = err?.code;
+          if (code === '42P01' || code === '42703') {
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+  }
+
+  return null;
+};
+
 export const fetchFinishGame = async (gameId, userId) => {
   const { rows } = await query('SELECT "game_finish_game"($1, $2)', [gameId, userId]);
   return rows[0]?.game_finish_game;
