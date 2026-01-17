@@ -10,6 +10,15 @@ export const fetchGameState = async (gameId) => {
   return rows[0]?.get_game_state;
 };
 
+export const fetchServerNowMs = async () => {
+  const { rows } = await query(
+    'SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint AS now_ms',
+  );
+  const raw = rows[0]?.now_ms;
+  const asNumber = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(asNumber) ? asNumber : null;
+};
+
 export const fetchNewGame = async (maxSeatsCount, turnTime, gameName, userId, nickname) => {
   const { rows } = await query('SELECT "game_create_game"($1, $2, $3, $4, $5)', [
     userId,

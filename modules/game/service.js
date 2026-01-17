@@ -172,6 +172,15 @@ export const getGameState = async (gameId) => {
   return gameModel.fetchGameState(gameId);
 };
 
+export const getServerNowMs = async () => {
+  const nowMs = await gameModel.fetchServerNowMs();
+  if (typeof nowMs === 'number' && Number.isFinite(nowMs) && nowMs > 0) {
+    return nowMs;
+  }
+
+  return Date.now();
+};
+
 export const createNewGame = async (maxSeatsCount, turnTime, gameName, nickname, userId) => {
   if (!maxSeatsCount) {
     const err = new Error('Требуется количество мест');

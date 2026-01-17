@@ -52,7 +52,7 @@ const TURN_START_TIMEZONE_OFFSET_MINUTES = (() => {
   return Number.isFinite(asNumber) ? asNumber : -180;
 })();
 const TURN_START_HAS_TZ_RE = /([zZ]|[+-]\d{2}:?\d{2})$/;
-const TURN_START_NAIVE_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?$/;
+const TURN_START_NAIVE_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
 const TURN_START_TZ_HOURS_ONLY_RE = /[+-]\d{2}$/;
 const TURN_START_PARTS_RE =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([zZ])|([+-])(\d{2})(?::?(\d{2}))?)?$/;
@@ -68,12 +68,12 @@ const normalizeTurnStartString = (value) => {
   return trimmed;
 };
 
-const pickBestNaiveTurnStartMs = (utcCandidate, offsetCandidate) => {
+const pickBestNaiveTurnStartMs = (utcCandidate, offsetCandidate, nowMs = Date.now()) => {
   if (!Number.isFinite(utcCandidate) && !Number.isFinite(offsetCandidate)) return 0;
   if (!Number.isFinite(utcCandidate)) return offsetCandidate;
   if (!Number.isFinite(offsetCandidate)) return utcCandidate;
 
-  const now = Date.now();
+  const now = nowMs;
   const utcSkewMs = utcCandidate - now;
   const offsetSkewMs = offsetCandidate - now;
   const futureToleranceMs = 60_000;
@@ -87,7 +87,7 @@ const pickBestNaiveTurnStartMs = (utcCandidate, offsetCandidate) => {
   return Math.abs(offsetSkewMs) < Math.abs(utcSkewMs) ? offsetCandidate : utcCandidate;
 };
 
-const parseTurnStartStringToMs = (value) => {
+const parseTurnStartStringToMs = (value, nowMs = Date.now()) => {
   const match = value.match(TURN_START_PARTS_RE);
   if (!match) return 0;
 
@@ -134,7 +134,7 @@ const parseTurnStartStringToMs = (value) => {
 
   const offsetMinutesFromUtc = -TURN_START_TIMEZONE_OFFSET_MINUTES;
   const offsetCandidate = utcBase - offsetMinutesFromUtc * 60_000;
-  return pickBestNaiveTurnStartMs(utcBase, offsetCandidate);
+  return pickBestNaiveTurnStartMs(utcBase, offsetCandidate, nowMs);
 };
 
 const autoHandled = new Map(); // handledKey -> handledAtMs
@@ -327,7 +327,7 @@ const pickRowToTakeMostCards = (rows = []) => {
   return sorted[0]?.rowId ?? null;
 };
 
-const normalizeTurnStartMs = (value) => {
+const normalizeTurnStartMs = (value, nowMs = Date.now()) => {
   if (value === null || value === undefined || value === '') return 0;
 
   if (typeof value === 'number') {
@@ -346,7 +346,7 @@ const normalizeTurnStartMs = (value) => {
     const normalized = normalizeTurnStartString(trimmed);
     const parsed = new Date(normalized).getTime();
     if (!Number.isFinite(parsed)) {
-      const fallbackParsed = parseTurnStartStringToMs(normalized);
+      const fallbackParsed = parseTurnStartStringToMs(normalized, nowMs);
       return Number.isFinite(fallbackParsed) ? fallbackParsed : 0;
     }
 
@@ -357,7 +357,7 @@ const normalizeTurnStartMs = (value) => {
       const serverOffsetMinutes = new Date(parsed).getTimezoneOffset();
       const shiftMs = (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
       const shifted = parsed + shiftMs;
-      const now = Date.now();
+      const now = nowMs;
       const parsedSkewMs = parsed - now;
       const shiftedSkewMs = shifted - now;
       const futureToleranceMs = 60_000;
@@ -399,7 +399,7 @@ const getTurnDurationMs = (state) => {
   return null;
 };
 
-const getTurnStartMs = (state) => {
+const getTurnStartMs = (state, nowMs = Date.now()) => {
   if (!state || typeof state !== 'object') return 0;
 
   const stateRecord = state;
@@ -416,7 +416,7 @@ const getTurnStartMs = (state) => {
   ];
 
   const candidate = candidates.find(value => value !== null && value !== undefined && value !== '');
-  return normalizeTurnStartMs(candidate);
+  return normalizeTurnStartMs(candidate, nowMs);
 };
 
 const getTurnKey = (currentPlayer, state) => {
@@ -444,11 +444,11 @@ const getApiError = (result) => {
   return trimmed ? trimmed : null;
 };
 
-const getFallbackTurnStartMs = (gameId, currentPlayer, state) => {
+const getFallbackTurnStartMs = (gameId, currentPlayer, state, nowMs = Date.now()) => {
   const turnKey = getTurnKey(currentPlayer, state);
   if (!turnKey) return 0;
 
-  const now = Date.now();
+  const now = nowMs;
   const existing = turnStartFallbackByGame.get(gameId);
   if (!existing || existing.turnKey !== turnKey) {
     turnStartFallbackByGame.set(gameId, { turnKey, startedAtMs: now, updatedAtMs: now });
@@ -459,29 +459,29 @@ const getFallbackTurnStartMs = (gameId, currentPlayer, state) => {
   return existing.startedAtMs;
 };
 
-const markPaused = (handledKey) => {
+const markPaused = (handledKey, nowMs = Date.now()) => {
   if (!pauseByTurn.has(handledKey)) {
     pauseByTurn.set(handledKey, { pausedAtMs: null, pausedTotalMs: 0, updatedAtMs: 0 });
   }
   const pauseState = pauseByTurn.get(handledKey);
-  const now = Date.now();
+  const now = nowMs;
   pauseState.updatedAtMs = now;
   if (pauseState.pausedAtMs === null) {
     pauseState.pausedAtMs = now;
   }
 };
 
-const markResumed = (handledKey) => {
+const markResumed = (handledKey, nowMs = Date.now()) => {
   const pauseState = pauseByTurn.get(handledKey);
   if (!pauseState) return;
-  const now = Date.now();
+  const now = nowMs;
   pauseState.updatedAtMs = now;
   if (pauseState.pausedAtMs === null) return;
   pauseState.pausedTotalMs += Math.max(0, now - pauseState.pausedAtMs);
   pauseState.pausedAtMs = null;
 };
 
-const autoChooseJokerColors = async (gameId, state, connections) => {
+const autoChooseJokerColors = async (gameId, state, connections, nowMs = Date.now()) => {
   if (!state || !gameId) return false;
   if (!isFinalStage(state)) return false;
 
@@ -518,14 +518,14 @@ const autoChooseJokerColors = async (gameId, state, connections) => {
       if (typeof error === 'string' && error.trim()) {
         const normalized = error.toLowerCase();
         if (normalized.includes('уже выбран')) {
-          jokerAutoHandled.set(handledKey, Date.now());
+          jokerAutoHandled.set(handledKey, nowMs);
         } else {
           console.warn('Auto-joker-color selection failed', { error, gameId, playerId });
         }
         continue;
       }
 
-      jokerAutoHandled.set(handledKey, Date.now());
+      jokerAutoHandled.set(handledKey, nowMs);
       changed = true;
     } catch (err) {
       console.error('Auto-joker-color selection failed', err);
@@ -535,7 +535,7 @@ const autoChooseJokerColors = async (gameId, state, connections) => {
   return changed;
 };
 
-const autoChooseScoreColors = async (gameId, state, connections) => {
+const autoChooseScoreColors = async (gameId, state, connections, nowMs = Date.now()) => {
   if (!state || !gameId) return false;
   if (!isFinalStage(state)) return false;
 
@@ -575,14 +575,14 @@ const autoChooseScoreColors = async (gameId, state, connections) => {
       if (typeof error === 'string' && error.trim()) {
         const normalized = error.toLowerCase();
         if (normalized.includes('уже выбран') || normalized.includes('уже выбраны')) {
-          scoreAutoHandled.set(handledKey, Date.now());
+          scoreAutoHandled.set(handledKey, nowMs);
         } else {
           console.warn('Auto-score-color selection failed', { error, gameId, playerId });
         }
         continue;
       }
 
-      scoreAutoHandled.set(handledKey, Date.now());
+      scoreAutoHandled.set(handledKey, nowMs);
       changed = true;
     } catch (err) {
       console.error('Auto-score-color selection failed', err);
@@ -592,18 +592,20 @@ const autoChooseScoreColors = async (gameId, state, connections) => {
   return changed;
 };
 
-export const maybeAutoMove = async (gameId, state, connections) => {
+export const maybeAutoMove = async (gameId, state, connections, nowMs = null) => {
   try {
     if (!state || !gameId) return false;
+
+    const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : Date.now();
 
     const gameStatus = getUiGameStatus(state);
     debugAutoMove('Tick', { gameId, gameStatus });
     if (gameStatus === 'waiting' || gameStatus === 'unknown') return false;
     if (gameStatus === 'finished') {
-      const jokersAutoPlayed = await autoChooseJokerColors(gameId, state, connections);
+      const jokersAutoPlayed = await autoChooseJokerColors(gameId, state, connections, now);
       if (jokersAutoPlayed) return true;
 
-      return await autoChooseScoreColors(gameId, state, connections);
+      return await autoChooseScoreColors(gameId, state, connections, now);
     }
 
     const currentPlayer = Array.isArray(state.players)
@@ -615,10 +617,10 @@ export const maybeAutoMove = async (gameId, state, connections) => {
       return false;
     }
 
-    let turnStartMs = getTurnStartMs(state);
+    let turnStartMs = getTurnStartMs(state, now);
     if (!turnStartMs) {
       debugAutoMove('Missing turn_start; using fallback', { gameId, currentPlayerId });
-      turnStartMs = getFallbackTurnStartMs(gameId, currentPlayer, state);
+      turnStartMs = getFallbackTurnStartMs(gameId, currentPlayer, state, now);
     }
     if (!turnStartMs) {
       debugAutoMove('Skip: no turn_start available', { gameId, currentPlayerId });
@@ -629,15 +631,13 @@ export const maybeAutoMove = async (gameId, state, connections) => {
     if (autoHandled.has(handledKey)) return false;
 
     if (gameStatus === 'paused') {
-      markPaused(handledKey);
+      markPaused(handledKey, now);
       return false;
     }
 
     if (gameStatus !== 'active') return false;
 
-    markResumed(handledKey);
-
-    const now = Date.now();
+    markResumed(handledKey, now);
     const pausedTotalMs = pauseByTurn.get(handledKey)?.pausedTotalMs ?? 0;
     const elapsed = Math.max(0, now - turnStartMs - pausedTotalMs);
     const turnDurationMs = getTurnDurationMs(state);
@@ -684,7 +684,7 @@ export const maybeAutoMove = async (gameId, state, connections) => {
 
     const rows = Array.isArray(state.rows) ? state.rows : [];
 
-    autoHandled.set(handledKey, Date.now());
+    autoHandled.set(handledKey, now);
     try {
       if (isDeckEmpty(state)) {
         const rowIdToTake = pickRowToTakeMostCards(rows);
@@ -766,8 +766,8 @@ export const maybeAutoMove = async (gameId, state, connections) => {
 
 export const maybeAutoChooseJokerColors = autoChooseJokerColors;
 
-export const clearOldAutoMarks = () => {
-  const now = Date.now();
+export const clearOldAutoMarks = (nowMs = null) => {
+  const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : Date.now();
 
   for (const [key, handledAtMs] of autoHandled.entries()) {
     if (typeof handledAtMs !== 'number') continue;

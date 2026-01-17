@@ -10,7 +10,7 @@ const TURN_START_TIMEZONE_OFFSET_MINUTES = (() => {
 })();
 
 const TURN_START_HAS_TZ_RE = /([zZ]|[+-]\d{2}:?\d{2})$/;
-const TURN_START_NAIVE_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?$/;
+const TURN_START_NAIVE_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
 const TURN_START_TZ_HOURS_ONLY_RE = /[+-]\d{2}$/;
 
 const normalizeTurnStartString = (value) => {
@@ -24,7 +24,7 @@ const normalizeTurnStartString = (value) => {
   return trimmed;
 };
 
-const parseTimestampToMs = (value) => {
+const parseTimestampToMs = (value, nowMs = Date.now()) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value < 1e12 ? value * 1000 : value;
   }
@@ -50,7 +50,7 @@ const parseTimestampToMs = (value) => {
     const serverOffsetMinutes = new Date(parsed).getTimezoneOffset();
     const shiftMs = (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
     const shifted = parsed + shiftMs;
-    const now = Date.now();
+    const now = nowMs;
     const parsedSkewMs = parsed - now;
     const shiftedSkewMs = shifted - now;
     const futureToleranceMs = 60_000;
@@ -89,7 +89,7 @@ const getTurnDurationMs = (state) => {
   return null;
 };
 
-const getTurnStartMs = (state) => {
+const getTurnStartMs = (state, nowMs = Date.now()) => {
   if (!state || typeof state !== 'object') return null;
 
   const candidates = [
@@ -105,7 +105,7 @@ const getTurnStartMs = (state) => {
   ];
 
   for (const candidate of candidates) {
-    const parsed = parseTimestampToMs(candidate);
+    const parsed = parseTimestampToMs(candidate, nowMs);
     if (typeof parsed === 'number' && Number.isFinite(parsed) && parsed > 0) return parsed;
   }
 
@@ -132,7 +132,8 @@ export const getGameState = async (req, res, next) => {
         await touchPresence(id, playerId);
       }
     }
-    clearOldAutoMarks();
+    const serverNow = await gameService.getServerNowMs();
+    clearOldAutoMarks(serverNow);
     let state = await gameService.getGameState(id);
     const connectionsForAuto = await getConnections(id);
 
@@ -143,7 +144,7 @@ export const getGameState = async (req, res, next) => {
       }
     }
 
-    const autoPlayed = await maybeAutoMove(id, state, connectionsForAuto);
+    const autoPlayed = await maybeAutoMove(id, state, connectionsForAuto, serverNow);
     if (autoPlayed) {
       state = await gameService.getGameState(id);
     }
@@ -158,8 +159,7 @@ export const getGameState = async (req, res, next) => {
         })
       : state?.players;
 
-    const serverNow = Date.now();
-    const turnStartMs = getTurnStartMs(state);
+    const turnStartMs = getTurnStartMs(state, serverNow);
     const turnDurationMs = getTurnDurationMs(state);
     const turnEndsAt =
       typeof turnStartMs === 'number' && typeof turnDurationMs === 'number'
