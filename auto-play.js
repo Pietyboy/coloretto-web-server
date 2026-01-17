@@ -74,23 +74,17 @@ const normalizeTurnStartString = (value) => {
   return trimmed;
 };
 
-const pickBestNaiveTurnStartMs = (utcCandidate, offsetCandidate, nowMs = Date.now()) => {
-  if (!Number.isFinite(utcCandidate) && !Number.isFinite(offsetCandidate)) return 0;
-  if (!Number.isFinite(utcCandidate)) return offsetCandidate;
-  if (!Number.isFinite(offsetCandidate)) return utcCandidate;
-
-  const now = nowMs;
-  const utcSkewMs = utcCandidate - now;
-  const offsetSkewMs = offsetCandidate - now;
+const pickClosestTimestampMs = (candidates, nowMs = Date.now()) => {
+  const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : Date.now();
   const futureToleranceMs = 60_000;
 
-  const utcTooFuture = utcSkewMs > futureToleranceMs;
-  const offsetTooFuture = offsetSkewMs > futureToleranceMs;
+  const normalized = candidates.filter(value => typeof value === 'number' && Number.isFinite(value));
+  if (normalized.length === 0) return 0;
 
-  if (utcTooFuture && !offsetTooFuture) return offsetCandidate;
-  if (!utcTooFuture && offsetTooFuture) return utcCandidate;
+  const notTooFuture = normalized.filter(value => value - now <= futureToleranceMs);
+  const pool = notTooFuture.length ? notTooFuture : normalized;
 
-  return Math.abs(offsetSkewMs) < Math.abs(utcSkewMs) ? offsetCandidate : utcCandidate;
+  return pool.reduce((best, value) => (Math.abs(value - now) < Math.abs(best - now) ? value : best), pool[0]);
 };
 
 const parseTurnStartStringToMs = (value, nowMs = Date.now()) => {
@@ -138,9 +132,14 @@ const parseTurnStartStringToMs = (value, nowMs = Date.now()) => {
 
   if (!Number.isFinite(TURN_START_TIMEZONE_OFFSET_MINUTES)) return utcBase;
 
-  const offsetMinutesFromUtc = -TURN_START_TIMEZONE_OFFSET_MINUTES;
-  const offsetCandidate = utcBase - offsetMinutesFromUtc * 60_000;
-  return pickBestNaiveTurnStartMs(utcBase, offsetCandidate, nowMs);
+  return pickClosestTimestampMs(
+    [
+      utcBase,
+      utcBase + TURN_START_TIMEZONE_OFFSET_MINUTES * 60_000,
+      utcBase - TURN_START_TIMEZONE_OFFSET_MINUTES * 60_000,
+    ],
+    nowMs,
+  );
 };
 
 const autoHandled = new Map(); // handledKey -> handledAtMs
@@ -361,20 +360,13 @@ const normalizeTurnStartMs = (value, nowMs = Date.now()) => {
 
     if (isNaiveDateTime && !hasTimezone && Number.isFinite(TURN_START_TIMEZONE_OFFSET_MINUTES)) {
       const serverOffsetMinutes = new Date(parsed).getTimezoneOffset();
-      const shiftMs = (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
-      const shifted = parsed + shiftMs;
-      const now = nowMs;
-      const parsedSkewMs = parsed - now;
-      const shiftedSkewMs = shifted - now;
-      const futureToleranceMs = 60_000;
+      const legacyShiftMs = (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
+      const utcOffsetShiftMs = (-TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
 
-      const parsedTooFuture = parsedSkewMs > futureToleranceMs;
-      const shiftedTooFuture = shiftedSkewMs > futureToleranceMs;
-
-      if (parsedTooFuture && !shiftedTooFuture) return shifted;
-      if (!parsedTooFuture && shiftedTooFuture) return parsed;
-
-      return Math.abs(shiftedSkewMs) < Math.abs(parsedSkewMs) ? shifted : parsed;
+      return pickClosestTimestampMs(
+        [parsed, parsed + legacyShiftMs, parsed + utcOffsetShiftMs],
+        nowMs,
+      );
     }
 
     return parsed;

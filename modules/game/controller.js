@@ -24,6 +24,19 @@ const normalizeTurnStartString = (value) => {
   return trimmed;
 };
 
+const pickClosestTimestampMs = (candidates, nowMs = Date.now()) => {
+  const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : Date.now();
+  const futureToleranceMs = 60_000;
+
+  const normalized = candidates.filter(value => typeof value === 'number' && Number.isFinite(value));
+  if (normalized.length === 0) return null;
+
+  const notTooFuture = normalized.filter(value => value - now <= futureToleranceMs);
+  const pool = notTooFuture.length ? notTooFuture : normalized;
+
+  return pool.reduce((best, value) => (Math.abs(value - now) < Math.abs(best - now) ? value : best), pool[0]);
+};
+
 const parseTimestampToMs = (value, nowMs = Date.now()) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value < 1e12 ? value * 1000 : value;
@@ -48,20 +61,15 @@ const parseTimestampToMs = (value, nowMs = Date.now()) => {
 
   if (isNaiveDateTime && !hasTimezone && Number.isFinite(TURN_START_TIMEZONE_OFFSET_MINUTES)) {
     const serverOffsetMinutes = new Date(parsed).getTimezoneOffset();
-    const shiftMs = (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
-    const shifted = parsed + shiftMs;
-    const now = nowMs;
-    const parsedSkewMs = parsed - now;
-    const shiftedSkewMs = shifted - now;
-    const futureToleranceMs = 60_000;
+    const legacyShiftMs = (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
+    const utcOffsetShiftMs = (-TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
 
-    const parsedTooFuture = parsedSkewMs > futureToleranceMs;
-    const shiftedTooFuture = shiftedSkewMs > futureToleranceMs;
+    const best = pickClosestTimestampMs(
+      [parsed, parsed + legacyShiftMs, parsed + utcOffsetShiftMs],
+      nowMs,
+    );
 
-    if (parsedTooFuture && !shiftedTooFuture) return shifted;
-    if (!parsedTooFuture && shiftedTooFuture) return parsed;
-
-    return Math.abs(shiftedSkewMs) < Math.abs(parsedSkewMs) ? shifted : parsed;
+    if (typeof best === 'number') return best;
   }
 
   return parsed;
