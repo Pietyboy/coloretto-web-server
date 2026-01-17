@@ -281,9 +281,9 @@ export const resetGame = async (req, res, next) => {
 
 export const joinGame = async (req, res, next) => {
   try {
-    const { gameId } = req.body;
+    const { gameId, nickname } = req.body;
     const userId = req.userId;
-    const result = await gameService.joinGame(gameId, userId);
+    const result = await gameService.joinGame(gameId, userId, nickname);
     const error = result && typeof result === 'object' ? result.error : undefined;
     if (typeof error === 'string' && error.trim()) {
       return res.status(400).json({ error });

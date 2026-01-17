@@ -305,7 +305,7 @@ export const resetGame = async (gameId, userId) => {
   return gameModel.fetchResetGame(gameId, userId);
 };
 
-export const joinGame = async (gameId, userId) => {
+export const joinGame = async (gameId, userId, nickname = null) => {
   if (!gameId) {
     const err = new Error('Требуется ID игры');
     err.status = 400;
@@ -318,10 +318,19 @@ export const joinGame = async (gameId, userId) => {
     throw err;
   }
 
-  const result = await gameModel.fetchJoinGame(gameId, userId);
+  const result = await gameModel.fetchJoinGame(gameId, userId, nickname);
 
   const error = result && typeof result === 'object' ? result.error : undefined;
   if (typeof error === 'string' && error.trim()) {
+    return result;
+  }
+
+  const statusCandidate = result && typeof result === 'object' ? result.status : undefined;
+  const status = normalizeStatus(statusCandidate);
+  const playerIdRaw = result && typeof result === 'object' ? (result.playerId ?? result.player_id) : undefined;
+  const playerId = typeof playerIdRaw === 'number' ? playerIdRaw : Number(playerIdRaw);
+  const joined = status === 'success' || status === 'ok' || (Number.isFinite(playerId) && playerId > 0);
+  if (!joined) {
     return result;
   }
 
@@ -423,20 +432,7 @@ export const createNewPlayer = async (gameId, userId, nickname) => {
     throw err;
   }
 
-  const result = await gameModel.fetchNewPlayer(gameId, userId, nickname);
-
-  const error = result && typeof result === 'object' ? result.error : undefined;
-  if (typeof error === 'string' && error.trim()) {
-    return result;
-  }
-
-  try {
-    await maybeAutoStartGame(gameId, userId);
-  } catch (_err) {
-    return result;
-  }
-
-  return result;
+  return joinGame(gameId, userId, nickname);
 };
 
 export const finishGame = async (gameId, userId) => {

@@ -65,8 +65,36 @@ export const fetchDeleteGame = async (gameId, userId) => {
   return rows[0]?.game_delete_game;
 };
 
-export const fetchJoinGame = async (gameId, userId) => {
-  const { rows } = await query('SELECT "game_join_game"($1, $2)', [gameId, userId]);
+export const fetchJoinGame = async (gameId, userId, nickname = null) => {
+  const normalizedGameId = Number(gameId);
+  const normalizedUserId = Number(userId);
+  const normalizedNickname = typeof nickname === 'string' ? nickname.trim() : null;
+
+  try {
+    const { rows } = await query(
+      'SELECT "game_join_game"(p_user_id := $1, p_game_id := $2, p_nickname := $3)',
+      [normalizedUserId, normalizedGameId, normalizedNickname || null],
+    );
+    return rows[0]?.game_join_game;
+  } catch (err) {
+    if (err?.code !== '42883') {
+      throw err;
+    }
+  }
+
+  try {
+    const { rows } = await query(
+      'SELECT "game_join_game"(p_user_id := $1, p_game_id := $2)',
+      [normalizedUserId, normalizedGameId],
+    );
+    return rows[0]?.game_join_game;
+  } catch (err) {
+    if (err?.code !== '42883') {
+      throw err;
+    }
+  }
+
+  const { rows } = await query('SELECT "game_join_game"($1, $2)', [normalizedGameId, normalizedUserId]);
   return rows[0]?.game_join_game;
 };
 
