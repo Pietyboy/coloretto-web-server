@@ -1,4 +1,5 @@
 import {
+  fetchCardInfo,
   fetchChooseColors,
   fetchMakeTurnCard,
   fetchMakeTurnRow,
@@ -717,6 +718,12 @@ export const maybeAutoMove = async (gameId, state, connections, nowMs = null) =>
 
       const rowIdForCard = pickRowForCard(rows);
       if (rowIdForCard) {
+        const cardInfoResult = await fetchCardInfo(gameId, currentUserId);
+        const cardInfoError = getApiError(cardInfoResult);
+        if (cardInfoError) {
+          debugAutoMove('Failed: reveal card', { error: cardInfoError, gameId, playerId: currentPlayerId });
+        }
+
         const result = await fetchMakeTurnCard(gameId, rowIdForCard, currentUserId);
         const error = getApiError(result);
         if (error) {
