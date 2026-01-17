@@ -180,18 +180,59 @@ export const fetchPlayerForGame = async (gameId, userId) => {
 };
 
 export const fetchUserIdForPlayer = async (gameId, playerId) => {
-  const { rows } = await query(
-    `SELECT gu.user_id
-     FROM game_players gp
-     JOIN game_users gu ON gu.login = gp.login
-     WHERE gp.game_id = $1 AND gp.player_id = $2
-     LIMIT 1`,
-    [gameId, playerId],
-  );
+  const normalizedGameId = Number(gameId);
+  const normalizedPlayerId = Number(playerId);
+  if (!Number.isFinite(normalizedGameId) || !Number.isFinite(normalizedPlayerId)) return null;
 
-  const raw = rows[0]?.user_id;
-  const asNumber = typeof raw === 'number' ? raw : Number(raw);
-  return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : null;
+  const tryDirectUserId = async () => {
+    const { rows } = await query(
+      `SELECT gp.user_id
+       FROM game_players gp
+       WHERE gp.game_id = $1 AND gp.player_id = $2
+       LIMIT 1`,
+      [normalizedGameId, normalizedPlayerId],
+    );
+
+    const raw = rows[0]?.user_id;
+    const asNumber = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : null;
+  };
+
+  const tryJoinByLogin = async () => {
+    const { rows } = await query(
+      `SELECT gu.user_id
+       FROM game_players gp
+       JOIN game_users gu ON gu.login = gp.login
+       WHERE gp.game_id = $1 AND gp.player_id = $2
+       LIMIT 1`,
+      [normalizedGameId, normalizedPlayerId],
+    );
+
+    const raw = rows[0]?.user_id;
+    const asNumber = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : null;
+  };
+
+  try {
+    const direct = await tryDirectUserId();
+    if (direct) return direct;
+  } catch (err) {
+    const code = err?.code;
+    // 42703: undefined_column, 42P01: undefined_table
+    if (code !== '42703' && code !== '42P01') {
+      throw err;
+    }
+  }
+
+  try {
+    return await tryJoinByLogin();
+  } catch (err) {
+    const code = err?.code;
+    if (code === '42703' || code === '42P01') {
+      return null;
+    }
+    throw err;
+  }
 };
 
 export const fetchSetJokerColors = async (gameId, userId, choices) => {

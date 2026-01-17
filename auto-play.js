@@ -203,6 +203,12 @@ const getTopCardId = (state) => {
   return Number.isFinite(asNumber) ? asNumber : null;
 };
 
+const getUserIdFromPlayer = (player) => {
+  const raw = player?.userId ?? player?.user_id ?? player?.userid;
+  const asNumber = Number(raw);
+  return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : null;
+};
+
 const areAllRowsCollected = (state) => {
   const rows = Array.isArray(state?.rows) ? state.rows : [];
   return rows.length > 0 && getActiveRows(rows).length === 0;
@@ -510,7 +516,7 @@ const autoChooseJokerColors = async (gameId, state, connections, nowMs = Date.no
     if (!choices.length) continue;
 
     try {
-      const userId = await fetchUserIdForPlayer(gameId, playerId);
+      const userId = getUserIdFromPlayer(player) ?? await fetchUserIdForPlayer(gameId, playerId);
       if (!userId) continue;
 
       const result = await fetchSetJokerColors(gameId, userId, choices);
@@ -684,7 +690,7 @@ export const maybeAutoMove = async (gameId, state, connections, nowMs = null) =>
     });
 
     const rows = Array.isArray(state.rows) ? state.rows : [];
-    const currentUserId = await fetchUserIdForPlayer(gameId, currentPlayerId);
+    const currentUserId = getUserIdFromPlayer(currentPlayer) ?? await fetchUserIdForPlayer(gameId, currentPlayerId);
     if (!currentUserId) {
       debugAutoMove('Skip: cannot resolve userId for player', { gameId, playerId: currentPlayerId });
       return false;
