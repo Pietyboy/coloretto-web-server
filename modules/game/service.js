@@ -356,8 +356,13 @@ export const makeTurnRow = async (gameId, rowId, userId) => {
     throw err;
   }
 
-  const playerId = await requirePlayerIdForGame(gameId, userId);
-  return gameModel.fetchMakeTurnRow(playerId, gameId, rowId);
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
+    err.status = 400;
+    throw err;
+  }
+
+  return gameModel.fetchMakeTurnRow(gameId, userId, rowId);
 };
 
 export const makeTurnCard = async (gameId, rowId, userId) => {
@@ -373,8 +378,13 @@ export const makeTurnCard = async (gameId, rowId, userId) => {
     throw err;
   }
 
-  const playerId = await requirePlayerIdForGame(gameId, userId);
-  return gameModel.fetchMakeTurnCard(playerId, gameId, rowId);
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
+    err.status = 400;
+    throw err;
+  }
+
+  return gameModel.fetchMakeTurnCard(gameId, rowId, userId);
 };
 
 export const chooseColors = async (gameId, colorIds, userId) => {
@@ -493,6 +503,11 @@ export const leaveGame = async (gameId, userId) => {
     throw err;
   }
 
-  const playerId = await requirePlayerIdForGame(gameId, userId);
-  return gameModel.fetchLeaveGame(gameId, playerId, userId);
+  if (!userId) {
+    const err = new Error('Требуется ID пользователя');
+    err.status = 400;
+    throw err;
+  }
+
+  return gameModel.fetchLeaveGame(gameId, userId);
 };

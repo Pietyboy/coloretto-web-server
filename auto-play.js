@@ -1,4 +1,10 @@
-import { fetchChooseColors, fetchChooseJokerColors, fetchMakeTurnCard, fetchMakeTurnRow } from './modules/game/model.js';
+import {
+  fetchChooseColors,
+  fetchMakeTurnCard,
+  fetchMakeTurnRow,
+  fetchSetJokerColors,
+  fetchUserIdForPlayer,
+} from './modules/game/model.js';
 
 const DEFAULT_AUTO_MOVE_TIMEOUT_MS = 20_000;
 const DEFAULT_AUTO_MOVE_CLEANUP_TTL_MS = 60 * 60 * 1000;
@@ -512,7 +518,10 @@ const autoChooseJokerColors = async (gameId, state, connections, nowMs = Date.no
     if (!choices.length) continue;
 
     try {
-      const result = await fetchChooseJokerColors(gameId, playerId, choices);
+      const userId = await fetchUserIdForPlayer(gameId, playerId);
+      if (!userId) continue;
+
+      const result = await fetchSetJokerColors(gameId, userId, choices);
       const error = result && typeof result === 'object' ? result.error : undefined;
 
       if (typeof error === 'string' && error.trim()) {
@@ -683,6 +692,11 @@ export const maybeAutoMove = async (gameId, state, connections, nowMs = null) =>
     });
 
     const rows = Array.isArray(state.rows) ? state.rows : [];
+    const currentUserId = await fetchUserIdForPlayer(gameId, currentPlayerId);
+    if (!currentUserId) {
+      debugAutoMove('Skip: cannot resolve userId for player', { gameId, playerId: currentPlayerId });
+      return false;
+    }
 
     autoHandled.set(handledKey, now);
     try {
@@ -692,7 +706,7 @@ export const maybeAutoMove = async (gameId, state, connections, nowMs = null) =>
           autoHandled.delete(handledKey);
           return false;
         }
-        const result = await fetchMakeTurnRow(currentPlayerId, gameId, rowIdToTake);
+        const result = await fetchMakeTurnRow(gameId, currentUserId, rowIdToTake);
         const error = getApiError(result);
         if (error) {
           autoHandled.delete(handledKey);
@@ -705,37 +719,13 @@ export const maybeAutoMove = async (gameId, state, connections, nowMs = null) =>
 
       const rowIdForCard = pickRowForCard(rows);
       if (rowIdForCard) {
-        const topCardId = getTopCardId(state);
-        if (!topCardId) {
-          autoHandled.delete(handledKey);
-          return false;
-        }
-        const result = await fetchMakeTurnCard(currentPlayerId, gameId, rowIdForCard, topCardId);
+        const result = await fetchMakeTurnCard(gameId, rowIdForCard, currentUserId);
         const error = getApiError(result);
         if (error) {
-          const fallbackResult = await fetchMakeTurnCard(currentPlayerId, gameId, rowIdForCard);
-          const fallbackError = getApiError(fallbackResult);
-
-          if (fallbackError) {
-            autoHandled.delete(handledKey);
-            debugAutoMove('Failed: place card', {
-              error,
-              fallbackError,
-              gameId,
-              playerId: currentPlayerId,
-              rowId: rowIdForCard,
-              cardId: topCardId,
-            });
-            console.warn('Auto-move failed to place card', {
-              error,
-              fallbackError,
-              gameId,
-              playerId: currentPlayerId,
-              rowId: rowIdForCard,
-              cardId: topCardId,
-            });
-            return false;
-          }
+          autoHandled.delete(handledKey);
+          debugAutoMove('Failed: place card', { error, gameId, playerId: currentPlayerId, rowId: rowIdForCard });
+          console.warn('Auto-move failed to place card', { error, gameId, playerId: currentPlayerId, rowId: rowIdForCard });
+          return false;
         }
         return true;
       }
@@ -745,7 +735,7 @@ export const maybeAutoMove = async (gameId, state, connections, nowMs = null) =>
         autoHandled.delete(handledKey);
         return false;
       }
-      const result = await fetchMakeTurnRow(currentPlayerId, gameId, rowIdToTake);
+      const result = await fetchMakeTurnRow(gameId, currentUserId, rowIdToTake);
       const error = getApiError(result);
       if (error) {
         autoHandled.delete(handledKey);

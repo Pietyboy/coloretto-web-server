@@ -70,34 +70,24 @@ export const fetchJoinGame = async (gameId, userId) => {
   return rows[0]?.game_join_game;
 };
 
-export const fetchLeaveGame = async (gameId, playerId, userId) => {
-  const { rows } = await query('SELECT "game_leave_game"($1, $2, $3)', [gameId, playerId, userId]);
+export const fetchLeaveGame = async (gameId, userId) => {
+  const { rows } = await query('SELECT "game_leave_game"(p_game_id := $1, p_user_id := $2)', [gameId, userId]);
   return rows[0]?.game_leave_game;
 };
 
-export const fetchMakeTurnRow = async (playerId, gameId, rowId) => {
-  const { rows } = await query('SELECT "game_make_turn_row"($1, $2, $3)', [gameId, playerId, rowId]);
+export const fetchMakeTurnRow = async (gameId, userId, rowId) => {
+  const { rows } = await query(
+    'SELECT "game_make_turn_row"(p_game_id := $1, p_user_id := $2, p_row_id := $3)',
+    [gameId, userId, rowId],
+  );
   return rows[0]?.game_make_turn_row;
 };
 
-export const fetchMakeTurnCard = async (playerId, gameId, rowId, cardId) => {
-  if (cardId !== undefined && cardId !== null) {
-    try {
-      const { rows } = await query('SELECT "game_make_turn_card"($1, $2, $3, $4)', [
-        playerId,
-        gameId,
-        rowId,
-        cardId,
-      ]);
-      return rows[0]?.game_make_turn_card;
-    } catch (err) {
-      if (err?.code !== '42883') {
-        throw err;
-      }
-    }
-  }
-
-  const { rows } = await query('SELECT "game_make_turn_card"($1, $2, $3)', [playerId, gameId, rowId]);
+export const fetchMakeTurnCard = async (gameId, rowId, userId) => {
+  const { rows } = await query(
+    'SELECT "game_make_turn_card"(p_game_id := $1, p_row_id := $2, p_user_id := $3)',
+    [gameId, rowId, userId],
+  );
   return rows[0]?.game_make_turn_card;
 };
 
@@ -189,6 +179,21 @@ export const fetchPlayerForGame = async (gameId, userId) => {
   return rows[0]?.game_get_player_for_game;
 };
 
+export const fetchUserIdForPlayer = async (gameId, playerId) => {
+  const { rows } = await query(
+    `SELECT gu.user_id
+     FROM game_players gp
+     JOIN game_users gu ON gu.login = gp.login
+     WHERE gp.game_id = $1 AND gp.player_id = $2
+     LIMIT 1`,
+    [gameId, playerId],
+  );
+
+  const raw = rows[0]?.user_id;
+  const asNumber = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : null;
+};
+
 export const fetchSetJokerColors = async (gameId, userId, choices) => {
   console.log(JSON.stringify(choices))
   const { rows } = await query('SELECT "game_set_joker_colors"($1, $2, $3)', [
@@ -199,11 +204,11 @@ export const fetchSetJokerColors = async (gameId, userId, choices) => {
   return rows[0]?.game_set_joker_colors;
 };
 
-export const fetchChooseJokerColors = async (gameId, playerId, choices) => {
-  const { rows } = await query('SELECT "game_choose_joker_colors"($1, $2, $3::jsonb)', [
+export const fetchChooseJokerColors = async (userId, gameId, colors) => {
+  const { rows } = await query('SELECT "game_choose_joker_colors"(p_user_id := $1, p_game_id := $2, p_colors := $3)', [
+    userId,
     gameId,
-    playerId,
-    JSON.stringify(choices),
+    colors,
   ]);
   return rows[0]?.game_choose_joker_colors;
 };
