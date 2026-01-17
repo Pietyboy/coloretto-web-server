@@ -1,17 +1,128 @@
 import * as gameModel from './model.js';
 
-const ensurePlayerOwnership = async (playerId, gameId, userId) => {
+const normalizeStatus = (statusCandidate) => {
+  if (typeof statusCandidate !== 'string') return null;
+  const normalized = statusCandidate.trim().toLowerCase();
+  return normalized ? normalized : null;
+};
+
+const isGameAlreadyStarted = (stateRecord) => {
+  if (!stateRecord || typeof stateRecord !== 'object') return false;
+
+  if (stateRecord.isGameFinished === true || stateRecord.is_game_finished === true) {
+    return true;
+  }
+
+  const statusCandidate = stateRecord.gameStatus ?? stateRecord.status ?? stateRecord.game_status;
+  const status = normalizeStatus(statusCandidate);
+  if (!status) return false;
+
+  return (
+    status.includes('pause') ||
+    status.includes('finish') ||
+    status.includes('active') ||
+    status.includes('progress') ||
+    status.includes('in_progress') ||
+    status.includes('inprogress')
+  );
+};
+
+const getPlayersCount = (stateRecord) => {
+  if (!stateRecord || typeof stateRecord !== 'object') return null;
+
+  if (Array.isArray(stateRecord.players)) return stateRecord.players.length;
+
+  const raw =
+    stateRecord.currentPlayersCount ??
+    stateRecord.current_players_count ??
+    stateRecord.playersCount ??
+    stateRecord.players_count;
+
+  const asNumber = Number(raw);
+  return Number.isFinite(asNumber) ? asNumber : null;
+};
+
+const getMaxPlayerCount = (stateRecord) => {
+  if (!stateRecord || typeof stateRecord !== 'object') return null;
+
+  const raw =
+    stateRecord.maxPlayerCount ??
+    stateRecord.max_player_count ??
+    stateRecord.maxSeatsCount ??
+    stateRecord.max_seats_count ??
+    stateRecord.seats;
+  const asNumber = Number(raw);
+  return Number.isFinite(asNumber) ? asNumber : null;
+};
+
+const maybeAutoStartGame = async (gameId, triggeringUserId) => {
+  const state = await gameModel.fetchGameState(gameId);
+  if (!state || typeof state !== 'object') return;
+
+  const stateRecord = state;
+  if (isGameAlreadyStarted(stateRecord)) return;
+
+  const maxPlayerCount = getMaxPlayerCount(stateRecord);
+  if (!maxPlayerCount || maxPlayerCount <= 0) return;
+
+  const playersCount = getPlayersCount(stateRecord);
+  if (!playersCount || playersCount !== maxPlayerCount) return;
+
+  const startUserIds = [];
+  const addStartUserId = (candidate) => {
+    const asNumber = Number(candidate);
+    if (!Number.isFinite(asNumber) || asNumber <= 0) return;
+    if (!startUserIds.some(id => Number(id) === asNumber)) {
+      startUserIds.push(asNumber);
+    }
+  };
+
+  addStartUserId(await gameModel.fetchGameHostUserId(gameId));
+  addStartUserId(stateRecord.hostUserId ?? stateRecord.host_user_id);
+  addStartUserId(stateRecord.creatorId ?? stateRecord.creator_id);
+
+  if (Array.isArray(stateRecord.players)) {
+    const playersSorted = [...stateRecord.players].sort((a, b) => {
+      const turnA = Number(a?.turnNumber ?? a?.turn_number);
+      const turnB = Number(b?.turnNumber ?? b?.turn_number);
+      if (!Number.isFinite(turnA) && !Number.isFinite(turnB)) return 0;
+      if (!Number.isFinite(turnA)) return 1;
+      if (!Number.isFinite(turnB)) return -1;
+      return turnA - turnB;
+    });
+
+    for (const player of playersSorted) {
+      addStartUserId(player?.userId ?? player?.user_id ?? player?.userid);
+    }
+  }
+
+  addStartUserId(triggeringUserId);
+
+  for (const startUserId of startUserIds) {
+    const startResult = await gameModel.fetchStartGame(gameId, startUserId);
+    const startError = startResult && typeof startResult === 'object' ? startResult.error : undefined;
+    if (!(typeof startError === 'string' && startError.trim())) {
+      break;
+    }
+  }
+};
+
+const requirePlayerIdForGame = async (gameId, userId) => {
   if (!userId) {
     const err = new Error('Требуется ID пользователя');
     err.status = 400;
     throw err;
   }
+
   const player = await gameModel.fetchPlayerForGame(gameId, userId);
-  if (!player || Number(player.player_id) !== Number(playerId)) {
-    const err = new Error('Недоступно для этого пользователя');
+  const playerId = Number(player?.player_id ?? player?.playerId);
+  if (!Number.isFinite(playerId) || playerId <= 0) {
+    const err = new Error('Пользователь не подключён к игре');
     err.status = 403;
     throw err;
   }
+
+  return playerId;
 };
 
 export const getGamesList = async () => {
@@ -28,7 +139,7 @@ export const getGameState = async (gameId) => {
   return gameModel.fetchGameState(gameId);
 };
 
-export const createNewGame = async (maxSeatsCount, turnTime, gameName, userId) => {
+export const createNewGame = async (maxSeatsCount, turnTime, gameName, nickname, userId) => {
   if (!maxSeatsCount) {
     const err = new Error('Требуется количество мест');
     err.status = 400;
@@ -47,13 +158,19 @@ export const createNewGame = async (maxSeatsCount, turnTime, gameName, userId) =
     throw err;
   }
 
+  if (!nickname) {
+    const err = new Error('Требуется никнейм');
+    err.status = 400;
+    throw err;
+  }
+
   if (!userId) {
     const err = new Error('Требуется ID пользователя');
     err.status = 400;
     throw err;
   }
 
-  return gameModel.fetchNewGame(maxSeatsCount, turnTime, gameName, userId);
+  return gameModel.fetchNewGame(maxSeatsCount, turnTime, gameName, userId, nickname);
 };
 
 export const getGameScores = async (gameId) => {
@@ -159,16 +276,23 @@ export const joinGame = async (gameId, userId) => {
     throw err;
   }
 
-  return gameModel.fetchJoinGame(gameId, userId);
-};
+  const result = await gameModel.fetchJoinGame(gameId, userId);
 
-export const makeTurnRow = async (playerId, gameId, rowId, userId) => {
-  if (!playerId) {
-    const err = new Error('Требуется ID игрока');
-    err.status = 400;
-    throw err;
+  const error = result && typeof result === 'object' ? result.error : undefined;
+  if (typeof error === 'string' && error.trim()) {
+    return result;
   }
 
+  try {
+    await maybeAutoStartGame(gameId, userId);
+  } catch (_err) {
+    return result;
+  }
+
+  return result;
+};
+
+export const makeTurnRow = async (gameId, rowId, userId) => {
   if (!rowId) {
     const err = new Error('Требуется ID ряда');
     err.status = 400;
@@ -181,17 +305,11 @@ export const makeTurnRow = async (playerId, gameId, rowId, userId) => {
     throw err;
   }
 
-  await ensurePlayerOwnership(playerId, gameId, userId);
+  const playerId = await requirePlayerIdForGame(gameId, userId);
   return gameModel.fetchMakeTurnRow(playerId, gameId, rowId);
 };
 
-export const makeTurnCard = async (playerId, gameId, rowId, userId) => {
-  if (!playerId) {
-    const err = new Error('Требуется ID игрока');
-    err.status = 400;
-    throw err;
-  }
-
+export const makeTurnCard = async (gameId, rowId, userId) => {
   if (!rowId) {
     const err = new Error('Требуется ID ряда');
     err.status = 400;
@@ -204,13 +322,13 @@ export const makeTurnCard = async (playerId, gameId, rowId, userId) => {
     throw err;
   }
 
-  await ensurePlayerOwnership(playerId, gameId, userId);
+  const playerId = await requirePlayerIdForGame(gameId, userId);
   return gameModel.fetchMakeTurnCard(playerId, gameId, rowId);
 };
 
-export const chooseColors = async (playerId, colorIds, gameId, userId) => {
-  if (!playerId) {
-    const err = new Error('Требуется ID игрока');
+export const chooseColors = async (gameId, colorIds, userId) => {
+  if (!gameId) {
+    const err = new Error('Требуется ID игры');
     err.status = 400;
     throw err;
   }
@@ -221,9 +339,7 @@ export const chooseColors = async (playerId, colorIds, gameId, userId) => {
     throw err;
   }
 
-  if (gameId && userId) {
-    await ensurePlayerOwnership(playerId, gameId, userId);
-  }
+  const playerId = await requirePlayerIdForGame(gameId, userId);
   return gameModel.fetchChooseColors(playerId, colorIds);
 };
 
@@ -254,51 +370,7 @@ export const createNewPlayer = async (gameId, userId, nickname) => {
   }
 
   try {
-    const state = await gameModel.fetchGameState(gameId);
-    if (!state || typeof state !== 'object') {
-      return result;
-    }
-
-    const stateRecord = state;
-    const statusCandidate = stateRecord.gameStatus ?? stateRecord.status ?? stateRecord.game_status;
-    const isWaiting =
-      typeof statusCandidate === 'string' && statusCandidate.trim().toLowerCase().includes('wait');
-
-    if (!isWaiting) {
-      return result;
-    }
-
-    const rawMax = stateRecord.maxPlayerCount ?? stateRecord.max_player_count;
-    const maxPlayerCount = Number(rawMax);
-    if (!Number.isFinite(maxPlayerCount) || maxPlayerCount <= 0) {
-      return result;
-    }
-
-    const playersCount = Array.isArray(stateRecord.players)
-      ? stateRecord.players.length
-      : Number(
-          stateRecord.currentPlayersCount ??
-            stateRecord.current_players_count ??
-            stateRecord.playersCount ??
-            stateRecord.players_count,
-        );
-
-    if (!Number.isFinite(playersCount) || playersCount !== maxPlayerCount) {
-      return result;
-    }
-
-    const hostUserId = await gameModel.fetchGameHostUserId(gameId);
-    const startUserIds = [];
-    if (hostUserId) startUserIds.push(hostUserId);
-    if (!hostUserId || Number(hostUserId) !== Number(userId)) startUserIds.push(userId);
-
-    for (const startUserId of startUserIds) {
-      const startResult = await gameModel.fetchStartGame(gameId, startUserId);
-      const startError = startResult && typeof startResult === 'object' ? startResult.error : undefined;
-      if (!(typeof startError === 'string' && startError.trim())) {
-        break;
-      }
-    }
+    await maybeAutoStartGame(gameId, userId);
   } catch (_err) {
     return result;
   }
@@ -316,7 +388,7 @@ export const finishGame = async (gameId, userId) => {
   return gameModel.fetchFinishGame(gameId, userId);
 };
 
-export const getCardInfo = async (gameId, userId, cardId) => {
+export const getCardInfo = async (gameId, userId) => {
   if (!gameId) {
     const err = new Error('Требуется ID игры');
     err.status = 400;
@@ -329,29 +401,7 @@ export const getCardInfo = async (gameId, userId, cardId) => {
     throw err;
   }
 
-  if (!cardId) {
-    const err = new Error('Требуется ID карты');
-    err.status = 400;
-    throw err;
-  }
-
-  return gameModel.fetchCardInfo(gameId, userId, cardId);
-};
-
-export const leaveGame = async (gameId, playerId, userId) => {
-  if (!gameId) {
-    const err = new Error('Требуется ID игры');
-    err.status = 400;
-    throw err;
-  }
-  if (!playerId) {
-    const err = new Error('Требуется ID игрока');
-    err.status = 400;
-    throw err;
-  }
-
-  await ensurePlayerOwnership(playerId, gameId, userId);
-  return gameModel.fetchLeaveGame(gameId, playerId);
+  return gameModel.fetchCardInfo(gameId, userId);
 };
 
 export const getPlayerForGame = async (gameId, userId) => {
@@ -368,15 +418,9 @@ export const getPlayerForGame = async (gameId, userId) => {
   return gameModel.fetchPlayerForGame(gameId, userId);
 };
 
-export const setJokerColors = async (gameId, playerId, choices, userId) => {
+export const setJokerColors = async (gameId, choices, userId) => {
   if (!gameId) {
     const err = new Error('Требуется ID игры');
-    err.status = 400;
-    throw err;
-  }
-
-  if (!playerId) {
-    const err = new Error('Требуется ID игрока');
     err.status = 400;
     throw err;
   }
@@ -387,6 +431,17 @@ export const setJokerColors = async (gameId, playerId, choices, userId) => {
     throw err;
   }
 
-  await ensurePlayerOwnership(playerId, gameId, userId);
+  await requirePlayerIdForGame(gameId, userId);
   return gameModel.fetchSetJokerColors(gameId, userId, choices);
+};
+
+export const leaveGame = async (gameId, userId) => {
+  if (!gameId) {
+    const err = new Error('Требуется ID игры');
+    err.status = 400;
+    throw err;
+  }
+
+  const playerId = await requirePlayerIdForGame(gameId, userId);
+  return gameModel.fetchLeaveGame(gameId, playerId, userId);
 };

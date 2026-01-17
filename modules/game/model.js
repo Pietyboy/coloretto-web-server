@@ -10,8 +10,14 @@ export const fetchGameState = async (gameId) => {
   return rows[0]?.get_game_state;
 };
 
-export const fetchNewGame = async (maxSeatsCount, turnTime, gameName, userId) => {
-  const { rows } = await query('SELECT "game_create_game"($1, $2, $3, $4)', [userId, gameName, maxSeatsCount, turnTime]);
+export const fetchNewGame = async (maxSeatsCount, turnTime, gameName, userId, nickname) => {
+  const { rows } = await query('SELECT "game_create_game"($1, $2, $3, $4, $5)', [
+    userId,
+    gameName,
+    maxSeatsCount,
+    turnTime,
+    nickname,
+  ]);
   return rows[0]?.game_create_game;
 };
 
@@ -145,9 +151,28 @@ export const fetchFinishGame = async (gameId, userId) => {
   return rows[0]?.game_finish_game;
 };
 
-export const fetchCardInfo = async (gameId, userId, cardId) => {
-  const { rows } = await query('SELECT "game_get_card_info"($1, $2, $3)', [gameId, userId, cardId]);
-  return rows[0]?.game_get_card_info;
+export const fetchCardInfo = async (gameId, userId) => {
+  try {
+    const { rows } = await query('SELECT "game_get_card_info"(p_user_id := $1, p_game_id := $2)', [userId, gameId]);
+    return rows[0]?.game_get_card_info;
+  } catch (err) {
+    if (err?.code !== '42883') {
+      throw err;
+    }
+  }
+
+  try {
+    const { rows } = await query('SELECT "game_get_card_info"(p_game_id := $1, p_user_id := $2)', [gameId, userId]);
+    return rows[0]?.game_get_card_info;
+  } catch (err) {
+    if (err?.code !== '42883') {
+      throw err;
+    }
+  }
+
+  const err = new Error('Функция game_get_card_info не найдена в БД');
+  err.status = 500;
+  throw err;
 };
 
 export const fetchPlayerForGame = async (gameId, userId) => {

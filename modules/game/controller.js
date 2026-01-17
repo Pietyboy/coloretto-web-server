@@ -2,6 +2,70 @@ import { clearOldAutoMarks, maybeAutoMove } from '../../auto-play.js';
 import { getConnections, touchPresence } from '../../presence.js';
 import * as gameService from './service.js';
 
+const parseTimestampToMs = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value < 1e12 ? value * 1000 : value;
+  }
+
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const asNumber = Number(trimmed);
+  if (Number.isFinite(asNumber)) {
+    return asNumber < 1e12 ? asNumber * 1000 : asNumber;
+  }
+
+  const parsed = Date.parse(trimmed);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const getTurnDurationMs = (state) => {
+  if (!state || typeof state !== 'object') return null;
+
+  const secRaw =
+    state.turnDuration
+    ?? state.turn_duration
+    ?? state.turnDurationSeconds
+    ?? state.turn_duration_seconds;
+
+  const sec = Number(secRaw);
+  if (Number.isFinite(sec) && sec > 0) return Math.floor(sec * 1000);
+
+  const msRaw =
+    state.turnDurationMs
+    ?? state.turn_duration_ms;
+
+  const ms = Number(msRaw);
+  if (Number.isFinite(ms) && ms > 0) return Math.floor(ms);
+
+  return null;
+};
+
+const getTurnStartMs = (state) => {
+  if (!state || typeof state !== 'object') return null;
+
+  const candidates = [
+    state.currentTurnStartTime,
+    state.turnStartTime,
+    state.turnStart,
+    state.turn_start,
+    state.turn_start_time,
+    state.turn_start_at,
+    state.current_turn_start_time,
+    state.current_turn_start,
+    state.current_turn_start_at,
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = parseTimestampToMs(candidate);
+    if (typeof parsed === 'number' && Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  return null;
+};
+
 export const getGamesList = async (_req, res, next) => {
   try {
     const list = await gameService.getGamesList();
@@ -41,10 +105,20 @@ export const getGameState = async (req, res, next) => {
         })
       : state?.players;
 
+    const serverNow = Date.now();
+    const turnStartMs = getTurnStartMs(state);
+    const turnDurationMs = getTurnDurationMs(state);
+    const turnEndsAt =
+      typeof turnStartMs === 'number' && typeof turnDurationMs === 'number'
+        ? turnStartMs + turnDurationMs
+        : null;
+
     res.json({
       state: {
         ...state,
         players: playersWithPresence,
+        serverNow,
+        turnEndsAt,
       },
     });
   } catch (err) {
@@ -54,11 +128,15 @@ export const getGameState = async (req, res, next) => {
 
 export const createNewGame = async (req, res, next) => {
   try {
-    const { maxSeatsCount, turnTime, gameName } = req.body;
+    const { maxSeatsCount, turnTime, gameName, seats, turnDuration, name, nickname } = req.body;
     const userId = req.userId;
-    const result = await gameService.createNewGame(maxSeatsCount, turnTime, gameName, userId);
-    const gameId = result?.gameId ?? result?.game_id;
-    res.json(gameId ? { gameId } : result);
+
+    const resolvedSeats = maxSeatsCount ?? seats;
+    const resolvedTurnTime = turnTime ?? turnDuration;
+    const resolvedGameName = gameName ?? name;
+
+    const result = await gameService.createNewGame(resolvedSeats, resolvedTurnTime, resolvedGameName, nickname, userId);
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -76,9 +154,9 @@ export const getGameScores = async (req, res, next) => {
 
 export const makeTurnRow = async (req, res, next) => {
   try {
-    const { playerId, gameId, rowId } = req.body;
+    const { gameId, rowId } = req.body;
     const userId = req.userId;
-    const result = await gameService.makeTurnRow(playerId, gameId, rowId, userId);
+    const result = await gameService.makeTurnRow(gameId, rowId, userId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -158,9 +236,9 @@ export const joinGame = async (req, res, next) => {
 
 export const leaveGame = async (req, res, next) => {
   try {
-    const { gameId, playerId } = req.body;
+    const { gameId } = req.body;
     const userId = req.userId;
-    const result = await gameService.leaveGame(gameId, playerId, userId);
+    const result = await gameService.leaveGame(gameId, userId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -179,9 +257,9 @@ export const getHostedGames = async (req, res, next) => {
 
 export const makeTurnCard = async (req, res, next) => {
   try {
-    const { playerId, gameId, rowId } = req.body;
+    const { gameId, rowId } = req.body;
     const userId = req.userId;
-    const result = await gameService.makeTurnCard(playerId, gameId, rowId, userId);
+    const result = await gameService.makeTurnCard(gameId, rowId, userId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -190,9 +268,9 @@ export const makeTurnCard = async (req, res, next) => {
 
 export const chooseColors = async (req, res, next) => {
   try {
-    const { playerId, colorIds, gameId } = req.body;
+    const { colorIds, gameId } = req.body;
     const userId = req.userId;
-    const result = await gameService.chooseColors(playerId, colorIds, gameId, userId);
+    const result = await gameService.chooseColors(gameId, colorIds, userId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -223,9 +301,9 @@ export const finishGame = async (req, res, next) => {
 
 export const getCardInfo = async (req, res, next) => {
   try {
-    const { gameId, cardId } = req.params;
+    const { gameId } = req.params;
     const userId = req.userId;
-    const result = await gameService.getCardInfo(gameId, userId, cardId);
+    const result = await gameService.getCardInfo(gameId, userId);
     const error = result && typeof result === 'object' ? result.error : undefined;
     if (typeof error === 'string' && error.trim()) {
       return res.status(400).json({ error });
@@ -256,9 +334,9 @@ export const getPlayerForGame = async (req, res, next) => {
 
 export const setJokerColors = async (req, res, next) => {
   try {
-    const { gameId, playerId, choices } = req.body;
+    const { gameId, choices } = req.body;
     const userId = req.userId;
-    const result = await gameService.setJokerColors(gameId, playerId, choices, userId);
+    const result = await gameService.setJokerColors(gameId, choices, userId);
     res.json(result);
   } catch (err) {
     next(err);

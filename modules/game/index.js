@@ -23,7 +23,7 @@ router.post('/joker/colors', controller.setJokerColors);
 router.post('/create-player', controller.createNewPlayer);
 router.post('/create/player', controller.createNewPlayer);
 router.post('/finish/game', controller.finishGame);
-router.get('/:gameId/card/:cardId', controller.getCardInfo);
+router.get('/:gameId/card', controller.getCardInfo);
 router.get('/me/:gameId', controller.getPlayerForGame);
 
 export default router;
