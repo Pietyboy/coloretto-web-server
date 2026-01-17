@@ -2,6 +2,28 @@ import { clearOldAutoMarks, maybeAutoMove } from '../../auto-play.js';
 import { getConnections, touchPresence } from '../../presence.js';
 import * as gameService from './service.js';
 
+const TURN_START_TIMEZONE_OFFSET_MINUTES = (() => {
+  const raw = process.env.TURN_START_TIMEZONE_OFFSET_MINUTES;
+  if (raw === undefined) return -180;
+  const asNumber = Number(raw);
+  return Number.isFinite(asNumber) ? asNumber : -180;
+})();
+
+const TURN_START_HAS_TZ_RE = /([zZ]|[+-]\d{2}:?\d{2})$/;
+const TURN_START_NAIVE_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?$/;
+const TURN_START_TZ_HOURS_ONLY_RE = /[+-]\d{2}$/;
+
+const normalizeTurnStartString = (value) => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  if (TURN_START_TZ_HOURS_ONLY_RE.test(trimmed)) {
+    return `${trimmed}:00`;
+  }
+
+  return trimmed;
+};
+
 const parseTimestampToMs = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value < 1e12 ? value * 1000 : value;
@@ -17,8 +39,32 @@ const parseTimestampToMs = (value) => {
     return asNumber < 1e12 ? asNumber * 1000 : asNumber;
   }
 
-  const parsed = Date.parse(trimmed);
-  return Number.isNaN(parsed) ? null : parsed;
+  const normalized = normalizeTurnStartString(trimmed);
+  const parsed = new Date(normalized).getTime();
+  if (!Number.isFinite(parsed)) return null;
+
+  const hasTimezone = TURN_START_HAS_TZ_RE.test(normalized);
+  const isNaiveDateTime = TURN_START_NAIVE_DATETIME_RE.test(normalized);
+
+  if (isNaiveDateTime && !hasTimezone && Number.isFinite(TURN_START_TIMEZONE_OFFSET_MINUTES)) {
+    const serverOffsetMinutes = new Date(parsed).getTimezoneOffset();
+    const shiftMs = (TURN_START_TIMEZONE_OFFSET_MINUTES - serverOffsetMinutes) * 60_000;
+    const shifted = parsed + shiftMs;
+    const now = Date.now();
+    const parsedSkewMs = parsed - now;
+    const shiftedSkewMs = shifted - now;
+    const futureToleranceMs = 60_000;
+
+    const parsedTooFuture = parsedSkewMs > futureToleranceMs;
+    const shiftedTooFuture = shiftedSkewMs > futureToleranceMs;
+
+    if (parsedTooFuture && !shiftedTooFuture) return shifted;
+    if (!parsedTooFuture && shiftedTooFuture) return parsed;
+
+    return Math.abs(shiftedSkewMs) < Math.abs(parsedSkewMs) ? shifted : parsed;
+  }
+
+  return parsed;
 };
 
 const getTurnDurationMs = (state) => {
