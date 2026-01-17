@@ -1,5 +1,17 @@
 import * as gameModel from './model.js';
 
+const AUTO_START_DEBUG =
+  ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTO_START_DEBUG ?? '').trim().toLowerCase());
+
+const debugAutoStart = (message, payload) => {
+  if (!AUTO_START_DEBUG) return;
+  if (payload !== undefined) {
+    console.log('[auto-start]', message, payload);
+    return;
+  }
+  console.log('[auto-start]', message);
+};
+
 const normalizeStatus = (statusCandidate) => {
   if (typeof statusCandidate !== 'string') return null;
   const normalized = statusCandidate.trim().toLowerCase();
@@ -56,17 +68,34 @@ const getMaxPlayerCount = (stateRecord) => {
 };
 
 const maybeAutoStartGame = async (gameId, triggeringUserId) => {
+  debugAutoStart('maybeAutoStartGame()', { gameId, triggeringUserId });
   const state = await gameModel.fetchGameState(gameId);
-  if (!state || typeof state !== 'object') return;
+  if (!state || typeof state !== 'object') {
+    debugAutoStart('skip: state is not object');
+    return false;
+  }
 
   const stateRecord = state;
-  if (isGameAlreadyStarted(stateRecord)) return;
+  if (isGameAlreadyStarted(stateRecord)) {
+    debugAutoStart('skip: already started', {
+      status: stateRecord.gameStatus ?? stateRecord.status ?? stateRecord.game_status,
+    });
+    return false;
+  }
 
   const maxPlayerCount = getMaxPlayerCount(stateRecord);
-  if (!maxPlayerCount || maxPlayerCount <= 0) return;
+  if (!maxPlayerCount || maxPlayerCount <= 0) {
+    debugAutoStart('skip: invalid maxPlayerCount', {
+      maxPlayerCount: stateRecord.maxPlayerCount ?? stateRecord.max_player_count ?? stateRecord.maxSeatsCount ?? stateRecord.max_seats_count ?? stateRecord.seats,
+    });
+    return false;
+  }
 
   const playersCount = getPlayersCount(stateRecord);
-  if (!playersCount || playersCount !== maxPlayerCount) return;
+  if (!playersCount || playersCount !== maxPlayerCount) {
+    debugAutoStart('skip: not full yet', { playersCount, maxPlayerCount });
+    return false;
+  }
 
   const startUserIds = [];
   const addStartUserId = (candidate) => {
@@ -97,14 +126,18 @@ const maybeAutoStartGame = async (gameId, triggeringUserId) => {
   }
 
   addStartUserId(triggeringUserId);
+  debugAutoStart('startUserIds', startUserIds);
 
   for (const startUserId of startUserIds) {
     const startResult = await gameModel.fetchStartGame(gameId, startUserId);
     const startError = startResult && typeof startResult === 'object' ? startResult.error : undefined;
+    debugAutoStart('try start', { startUserId, startError, startResult });
     if (!(typeof startError === 'string' && startError.trim())) {
-      break;
+      return true;
     }
   }
+
+  return false;
 };
 
 const requirePlayerIdForGame = async (gameId, userId) => {
@@ -290,6 +323,15 @@ export const joinGame = async (gameId, userId) => {
   }
 
   return result;
+};
+
+export const maybeAutoStartGameIfReady = async (gameId, userId) => {
+  if (!gameId || !userId) return false;
+  try {
+    return await maybeAutoStartGame(gameId, userId);
+  } catch (_err) {
+    return false;
+  }
 };
 
 export const makeTurnRow = async (gameId, rowId, userId) => {

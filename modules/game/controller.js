@@ -90,6 +90,13 @@ export const getGameState = async (req, res, next) => {
     let state = await gameService.getGameState(id);
     const connectionsForAuto = await getConnections(id);
 
+    if (userId) {
+      const autoStarted = await gameService.maybeAutoStartGameIfReady(id, userId);
+      if (autoStarted) {
+        state = await gameService.getGameState(id);
+      }
+    }
+
     const autoPlayed = await maybeAutoMove(id, state, connectionsForAuto);
     if (autoPlayed) {
       state = await gameService.getGameState(id);

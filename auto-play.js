@@ -150,7 +150,7 @@ const getUiGameStatus = (state) => {
 
   if (typeof candidate === 'string') {
     const normalized = candidate.toLowerCase();
-    if (normalized.includes('wait')) return 'waiting';
+    if (normalized.includes('wait') || normalized.includes('wating')) return 'waiting';
     if (normalized.includes('pause')) return 'paused';
     if (normalized.includes('finish')) return 'finished';
     if (
